@@ -187,6 +187,7 @@ PY
 - **405**：GET `/mcp` 无SSE流，认证后属正常现象；客户端应使用Streamable HTTP POST。
 - **502**：检查用户服务日志 `journalctl --user -u bili-library -n 30 --no-pager`，域名环境变量不得含Markdown链接格式。
 - **invalid_redirect_uri**：核对客户端精确回调和登记方式，默认DCR；不要把任意外部域名加入允许名单。
+- **access_denied / invalid_request**：查看`code`与`error_description`。`oauth_owner_token_invalid`表示独立MCP令牌不匹配，10分钟内可返回表单更正；`oauth_request_not_found`表示旧页面已用或服务重启，必须由客户端重新发起；`oauth_request_expired`表示超过10分钟；`oauth_cookie_missing` / `oauth_cookie_mismatch`表示浏览器Cookie缺失或不匹配。授权期间不要重启服务，不跨浏览器转移页面。每个授权标签页使用独立Cookie，错误令牌不会消耗该页的一次性凭据；成功授权后仍禁止重放。不要刷新旧POST结果或复制旧完整授权链接重新尝试。
 - **temporarily_unavailable**：授权尝试/登记/未完成页面超过上限，停止反复点击，核对客户端配置；异常大量登记时先关闭MCP，停服维护OAuth数据库再重新连接。
 - **有下载没字幕**：导入有效B站凭证后调用`bili_refresh_subtitles`。B站自身没有真实字幕时无法补出讲解内容。
 

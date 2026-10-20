@@ -29,7 +29,13 @@ def challenge(value): return base64.urlsafe_b64encode(hashlib.sha256(value.encod
 
 
 class OAuthError(LibraryError):
-    def __init__(self,code): self.code=code;super().__init__(code)
+    def __init__(self,code,reason=None,description=None):
+        self.code=code;self.reason=reason;self.description=description;super().__init__(code)
+
+
+def consent_cookie(nonce):
+    # Separate cookies keep concurrent browser authorizations from replacing each other.
+    return 'bili_oauth_'+digest(nonce)[:24]
 
 
 class Auth:
@@ -120,11 +126,22 @@ class Auth:
         with self.guard:
             now=time.time();self.attempts=[t for t in self.attempts if now-t<60]
             if len(self.attempts)>=10: raise OAuthError('temporarily_unavailable')
-            p=self.pending.pop(digest(nonce),None)
-            if not p or p['expires']<=now or not hmac.compare_digest(p['binding'],digest(binding)):
-                raise OAuthError('invalid_request')
-            if not self.check_owner(owner):
-                self.attempts.append(now);raise OAuthError('access_denied')
+            key=digest(nonce);p=self.pending.get(key)
+            if not p:
+                raise OAuthError('invalid_request','oauth_request_not_found','授权页面已使用或服务已重启，请在客户端重新发起授权，不要刷新旧提交。')
+            if p['expires']<=now:
+                self.pending.pop(key,None)
+                raise OAuthError('invalid_request','oauth_request_expired','授权页面已超过10分钟，请在客户端重新发起授权。')
+            if not binding:
+                raise OAuthError('invalid_request','oauth_cookie_missing','浏览器未携带授权Cookie；请允许本站Cookie，并在同一浏览器中重新发起授权。')
+            if not hmac.compare_digest(p['binding'],digest(binding)):
+                raise OAuthError('invalid_request','oauth_cookie_mismatch','授权Cookie与此页面不匹配，请关闭旧授权标签页并重新发起授权。')
+            if not self.check_owner(str(owner).strip()):
+                self.attempts.append(now)
+                raise OAuthError('access_denied','oauth_owner_token_invalid','独立MCP令牌不匹配；10分钟内可返回原表单重新输入，不要刷新提交结果。')
+            # Consume only a successful, browser-bound decision. Failed token entry
+            # can retry within the same expiry and existing brute-force rate limit.
+            self.pending.pop(key,None)
             data=p['data'];params={'state':data['state'],'iss':self.origin}
             if approve:
                 code=secrets.token_urlsafe(32)

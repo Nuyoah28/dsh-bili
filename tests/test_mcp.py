@@ -75,6 +75,7 @@ class AuthTests(unittest.TestCase):
             with self.assertRaises(OAuthError): self.auth.begin({**self.request,**changed})
         nonce,binding,_=self.auth.begin(self.request)
         with self.assertRaises(OAuthError): self.auth.consent(nonce,'wrong',self.auth.owner,True)
+        self.assertIn('code=',self.auth.consent(nonce,binding,self.auth.owner,True))
         with self.assertRaises(OAuthError): self.auth.consent(nonce,binding,self.auth.owner,True)
         nonce,binding,_=self.auth.begin(self.request)
         denied=self.auth.consent(nonce,binding,self.auth.owner,False)
@@ -93,6 +94,22 @@ class AuthTests(unittest.TestCase):
         with self.auth.guard:
             for pending in self.auth.pending.values(): pending['expires']=0
         with self.assertRaises(OAuthError): self.auth.consent(nonce,binding,self.auth.owner,True)
+
+    def test_wrong_token_retry_diagnostics_and_rate_limit(self):
+        nonce,binding,_=self.auth.begin(self.request)
+        for value,reason in [('', 'oauth_cookie_missing'),('wrong','oauth_cookie_mismatch')]:
+            with self.assertRaises(OAuthError) as caught: self.auth.consent(nonce,value,self.auth.owner,True)
+            self.assertEqual(caught.exception.reason,reason)
+        with self.assertRaises(OAuthError) as caught: self.auth.consent(nonce,binding,'web-token-not-mcp-token',True)
+        self.assertEqual(caught.exception.reason,'oauth_owner_token_invalid')
+        self.assertIn('code=',self.auth.consent(nonce,binding,' '+self.auth.owner+'\n',True))
+        with self.assertRaises(OAuthError) as caught: self.auth.consent(nonce,binding,self.auth.owner,True)
+        self.assertEqual(caught.exception.reason,'oauth_request_not_found')
+        nonce,binding,_=self.auth.begin(self.request)
+        for _ in range(9):
+            with self.assertRaises(OAuthError): self.auth.consent(nonce,binding,'wrong',True)
+        with self.assertRaises(OAuthError) as caught: self.auth.consent(nonce,binding,self.auth.owner,True)
+        self.assertEqual(caught.exception.code,'temporarily_unavailable')
 
 
 class MCPHTTPTests(unittest.TestCase):
@@ -221,6 +238,31 @@ class MCPHTTPTests(unittest.TestCase):
             self.assertEqual(status,303)
         self.assertEqual(self.request('/oauth/authorize?'+urlencode(params),method='GET',headers={'Host':'evil.example'})[1]['code'],'mcp_host_not_allowed')
         self.assertEqual(self.request('/oauth/authorize?'+urlencode(params),method='GET',headers={'Host':'127.0.0.1:'+str(self.server.server_address[1])})[1]['code'],'oauth_public_host_required')
+
+    def test_parallel_tabs_wrong_token_retry_and_missing_cookie_diagnostics(self):
+        _,client,_=self.request('/oauth/register',dict(redirect_uris=['http://127.0.0.1:12345/callback']),token=False)
+        params=dict(client_id=client['client_id'],redirect_uri=client['redirect_uris'][0],response_type='code',
+                    resource=ORIGIN+'/mcp',scope='library',state='parallel-tabs',code_challenge=challenge('v'*43),code_challenge_method='S256')
+        tabs=[]
+        for _ in range(2):
+            status,page,headers=self.request('/oauth/authorize?'+urlencode(params),method='GET',token=False)
+            self.assertEqual(status,200)
+            tabs.append((re.search(rb'name="nonce" value="([^"]+)"',page)[1].decode(),headers['Set-Cookie'].split(';')[0]))
+        self.assertNotEqual(tabs[0][1].split('=')[0],tabs[1][1].split('=')[0])
+        cookie='; '.join(t[1] for t in tabs)
+        for nonce,_ in tabs:
+            form=dict(nonce=nonce,owner=self.token,approve='yes')
+            headers={'Origin':ORIGIN}
+            _,error,_=self.request('/oauth/consent',form,form=True,headers=headers)
+            self.assertEqual(error['code'],'oauth_cookie_missing')
+            headers['Cookie']=cookie
+            _,error,_=self.request('/oauth/consent',{**form,'owner':'wrong-web-token'},form=True,headers=headers)
+            self.assertEqual(error['code'],'oauth_owner_token_invalid')
+            self.assertNotIn('wrong-web-token',json.dumps(error))
+            self.assertNotIn(self.token,json.dumps(error))
+            self.assertEqual(self.request('/oauth/consent',form,form=True,headers=headers)[0],303)
+            _,error,_=self.request('/oauth/consent',form,form=True,headers=headers)
+            self.assertEqual(error['code'],'oauth_request_not_found')
 
     def test_disabled_and_requires_https_origin(self):
         with patch.dict(os.environ,{'BILI_MCP_ENABLED':'1','BILI_WEB_PUBLIC_ORIGIN':''}),self.assertRaises(LibraryError):

@@ -12,7 +12,7 @@ import re
 from urllib.parse import parse_qs, urlsplit
 
 from .common import Library, LibraryError
-from .mcp_auth import OAuthError
+from .mcp_auth import OAuthError, consent_cookie
 from .mcp_tools import TOOLS, INSTRUCTIONS, call
 
 VERSIONS=('2025-03-26','2025-06-18','2025-11-25')
@@ -71,7 +71,7 @@ def authorize_page(h,data):
     # same-origin keeps the real form Origin, but discloses no referrer on external callbacks.
     h.send_response(200);h.headers_common(referrer_policy='same-origin');h.send_header('Content-Type','text/html; charset=utf-8')
     h.send_header('Content-Length',str(len(page)))
-    h.send_header('Set-Cookie',f'bili_oauth={binding}; Path=/oauth; HttpOnly; Secure; SameSite=Lax; Max-Age=600')
+    h.send_header('Set-Cookie',f'{consent_cookie(nonce)}={binding}; Path=/oauth; HttpOnly; Secure; SameSite=Lax; Max-Age=600')
     h.end_headers();h.wfile.write(page)
 
 
@@ -141,10 +141,11 @@ def handle(h,path,write):
             if origin!=auth.origin: raise SourceError('oauth_consent_origin_required')
             if h.headers.get('Sec-Fetch-Site')=='cross-site': raise SourceError('oauth_consent_cross_site')
             data=body(h);cookie=SimpleCookie();cookie.load(h.headers.get('Cookie',''))
-            binding=cookie.get('bili_oauth')
-            location=auth.consent(data.get('nonce',''),binding.value if binding else '',data.get('owner',''),data.get('approve')=='yes')
+            nonce=data.get('nonce','');cookie_name=consent_cookie(nonce)
+            binding=cookie.get(cookie_name)
+            location=auth.consent(nonce,binding.value if binding else '',data.get('owner',''),data.get('approve')=='yes')
             h.send_response(303);h.headers_common();h.send_header('Location',location)
-            h.send_header('Set-Cookie','bili_oauth=; Path=/oauth; HttpOnly; Secure; SameSite=Lax; Max-Age=0')
+            h.send_header('Set-Cookie',f'{cookie_name}=; Path=/oauth; HttpOnly; Secure; SameSite=Lax; Max-Age=0')
             h.send_header('Content-Length','0');h.end_headers();return True
         if path.startswith('/.well-known/'):
             if write: empty(h,405)
@@ -174,7 +175,11 @@ def handle(h,path,write):
             else: h.respond(result)
     except SourceError as exc: h.respond({'error':'请求来源或校验不通过','code':str(exc)},403)
     except PermissionError: h.respond({'error':'请求来源或校验不通过','code':'request_permission_denied'},403)
-    except OAuthError as exc: h.respond({'error':exc.code},400)
+    except OAuthError as exc:
+        value={'error':exc.code}
+        if exc.reason: value['code']=exc.reason
+        if exc.description: value['error_description']=exc.description
+        h.respond(value,400)
     except (BrokenPipeError,ConnectionResetError): pass
     except Exception: h.respond({'error':'invalid_request'},400)
     return True

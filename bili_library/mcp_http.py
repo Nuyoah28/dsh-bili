@@ -18,7 +18,7 @@ from .mcp_tools import TOOLS, INSTRUCTIONS, call
 VERSIONS=('2025-03-26','2025-06-18','2025-11-25')
 PATHS={'/mcp','/.well-known/oauth-protected-resource','/.well-known/oauth-protected-resource/mcp',
        '/.well-known/oauth-authorization-server','/oauth/register','/oauth/authorize',
-       '/oauth/consent','/oauth/token','/oauth/revoke'}
+       '/oauth/consent','/oauth/token','/oauth/revoke','/oauth/complete.js'}
 
 
 class SourceError(PermissionError):
@@ -72,6 +72,24 @@ def authorize_page(h,data):
     h.send_response(200);h.headers_common(referrer_policy='same-origin');h.send_header('Content-Type','text/html; charset=utf-8')
     h.send_header('Content-Length',str(len(page)))
     h.send_header('Set-Cookie',f'{consent_cookie(nonce)}={binding}; Path=/oauth; HttpOnly; Secure; SameSite=Lax; Max-Age=600')
+    h.end_headers();h.wfile.write(page)
+
+
+def complete_page(h,location,cookie_name,approved=True):
+    # A native form POST followed by a cross-origin 303 is blocked by form-action
+    # 'self' in Chromium. Finish the form navigation on our own origin first;
+    # a normal link/script navigation can then return to the registered callback.
+    # Never relax form-action: the owner's token must only be posted to this site.
+    title='授权已通过' if approved else '已拒绝授权'
+    page=f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>{title}</title><body><main><h1>{title}</h1>
+<p>正在返回客户端。请保持发起登录的 Mac 终端或应用运行，不要再次提交原授权表单。</p>
+<p>如果没有自动跳转，请在同一台设备上点击：<a id="oauth-return" rel="noreferrer" href="{html.escape(location,quote=True)}">返回客户端，完成连接</a>。</p>
+<p>此页面不表示客户端已完成连接；请以客户端的登录结果为准。</p>
+</main><script src="/oauth/complete.js" defer></script></body></html>'''.encode()
+    h.send_response(200);h.headers_common();h.send_header('Content-Type','text/html; charset=utf-8')
+    h.send_header('Content-Length',str(len(page)))
+    h.send_header('Set-Cookie',f'{cookie_name}=; Path=/oauth; HttpOnly; Secure; SameSite=Lax; Max-Age=0')
     h.end_headers();h.wfile.write(page)
 
 
@@ -144,12 +162,19 @@ def handle(h,path,write):
             nonce=data.get('nonce','');cookie_name=consent_cookie(nonce)
             binding=cookie.get(cookie_name)
             location=auth.consent(nonce,binding.value if binding else '',data.get('owner',''),data.get('approve')=='yes')
+            if 'text/html' in h.headers.get('Accept',''):
+                complete_page(h,location,cookie_name,data.get('approve')=='yes');return True
             h.send_response(303);h.headers_common();h.send_header('Location',location)
             h.send_header('Set-Cookie',f'{cookie_name}=; Path=/oauth; HttpOnly; Secure; SameSite=Lax; Max-Age=0')
             h.send_header('Content-Length','0');h.end_headers();return True
         if path.startswith('/.well-known/'):
             if write: empty(h,405)
             else: h.respond(auth.metadata(resource='oauth-protected-resource' in path))
+        elif path=='/oauth/complete.js':
+            if write: empty(h,405)
+            else:
+                from .webserver import ASSETS
+                h.file(ASSETS/'oauth-complete.js','text/javascript; charset=utf-8')
         elif path=='/oauth/authorize':
             if write: empty(h,405)
             elif host!=h.server.public_host: raise SourceError('oauth_public_host_required')

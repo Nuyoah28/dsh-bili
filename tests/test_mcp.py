@@ -264,6 +264,25 @@ class MCPHTTPTests(unittest.TestCase):
             _,error,_=self.request('/oauth/consent',form,form=True,headers=headers)
             self.assertEqual(error['code'],'oauth_request_not_found')
 
+    def test_browser_form_finishes_same_origin_before_callback(self):
+        _,client,_=self.request('/oauth/register',dict(redirect_uris=['http://127.0.0.1:12345/callback']),token=False)
+        params=dict(client_id=client['client_id'],redirect_uri=client['redirect_uris'][0],response_type='code',
+                    resource=ORIGIN+'/mcp',scope='library',state='browser-navigation',code_challenge=challenge('v'*43),code_challenge_method='S256')
+        _,page,headers=self.request('/oauth/authorize?'+urlencode(params),method='GET',token=False)
+        nonce=re.search(rb'name="nonce" value="([^"]+)"',page)[1].decode()
+        form=dict(nonce=nonce,owner=self.token,approve='yes')
+        status,page,headers=self.request('/oauth/consent',form,form=True,headers={'Cookie':headers['Set-Cookie'].split(';')[0],'Origin':ORIGIN,'Accept':'text/html'})
+        self.assertEqual(status,200)
+        self.assertNotIn('Location',headers)
+        self.assertIn("form-action 'self'",headers['Content-Security-Policy'])
+        self.assertEqual(headers['Referrer-Policy'],'no-referrer')
+        self.assertNotIn(self.token.encode(),page)
+        self.assertIn(b'id="oauth-return"',page)
+        self.assertIn(b'/oauth/complete.js',page)
+        self.assertIn('授权已通过'.encode(),page)
+        status,script,_=self.request('/oauth/complete.js',method='GET',token=False)
+        self.assertEqual(status,200);self.assertIn(b'window.location.replace',script)
+
     def test_disabled_and_requires_https_origin(self):
         with patch.dict(os.environ,{'BILI_MCP_ENABLED':'1','BILI_WEB_PUBLIC_ORIGIN':''}),self.assertRaises(LibraryError):
             AdminServer(self.temp.name,port=0)

@@ -139,9 +139,6 @@ class Auth:
             if not self.check_owner(str(owner).strip()):
                 self.attempts.append(now)
                 raise OAuthError('access_denied','oauth_owner_token_invalid','独立MCP令牌不匹配；10分钟内可返回原表单重新输入，不要刷新提交结果。')
-            # Consume only a successful, browser-bound decision. Failed token entry
-            # can retry within the same expiry and existing brute-force rate limit.
-            self.pending.pop(key,None)
             data=p['data'];params={'state':data['state'],'iss':self.origin}
             if approve:
                 code=secrets.token_urlsafe(32)
@@ -150,6 +147,9 @@ class Auth:
                     db.execute('INSERT INTO codes VALUES(?,?,?)',(digest(code),json.dumps(data),now+120))
                 params['code']=code
             else: params['error']='access_denied'
+            # Consume after a successful decision/code commit. A storage failure
+            # must not turn the next click into an unexplained stale-page error.
+            self.pending.pop(key,None)
             return data['redirect_uri']+('&' if '?' in data['redirect_uri'] else '?')+urlencode(params)
 
     def token(self,data):

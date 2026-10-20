@@ -116,5 +116,20 @@
       "deploy/mcp.service.conf.example",
       "tools/mcp-smoke.py"
     ]
+  },
+  "oauth_browser_validation": {
+    "date": "2026-10-21",
+    "result": "passed in real headless Chrome with ephemeral loopback HTTPS and HTTP callback",
+    "flow": [
+      "native HTML authorization form",
+      "browser-bound Secure cookie",
+      "same-origin completion page",
+      "script navigation to registered loopback callback",
+      "PKCE authorization code exchange"
+    ],
+    "unit_tests": 68,
+    "baseline": "old 303 flow completed in this Chrome; production 15-second wait root cause remains unconfirmed",
+    "production_status": "local changes only; production rollout and user login still pending",
+    "security": "form-action self retained; no real account credentials used or emitted"
   }
 }

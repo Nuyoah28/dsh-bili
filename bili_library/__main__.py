@@ -55,6 +55,8 @@ def parser():
     p.add_argument('--json', action='store_true', help='默认已输出 JSON；收藏夹可选择其他导出格式')
     sub = p.add_subparsers(dest='command', required=True)
     sub.add_parser('doctor')
+    s=sub.add_parser('dns-check',help='只读比较系统DNS与资料库所选解析器，不读取凭证')
+    s.add_argument('host',nargs='?',default='api.bilibili.com')
     sub.add_parser('init')
     sub.add_parser('mcp-revoke',help='撤销全部OAuth授权（不撤销独立MCP令牌）；停服后执行，再重启清除待授权页面')
     s = sub.add_parser('web'); s.add_argument('--port',type=int,default=int(os.environ.get('BILI_WEB_PORT','8765')))
@@ -230,6 +232,21 @@ def execute(args, library):
 def main():
     args = parser().parse_args()
     os.umask(0o077)
+    if args.command=='dns-check':
+        import socket
+        from .network import validate_url,public_addresses
+        from .dns_resolver import mode
+        value={'host':args.host,'system_addresses':[],'selected_addresses':[],'ok':False}
+        try:
+            validate_url('https://'+args.host)
+            value['mode']=mode()
+            try: value['system_addresses']=sorted({r[4][0] for r in socket.getaddrinfo(args.host,443,type=socket.SOCK_STREAM)})
+            except OSError: value['system_error']='系统DNS解析失败'
+            value['selected_addresses']=sorted({r[4][0] for r in public_addresses(args.host)})
+            value['ok']=True
+        except LibraryError as exc: value['error']=str(exc)
+        print(json.dumps(value,ensure_ascii=False,indent=2))
+        return 0 if value['ok'] else 1
     if args.command == 'doctor':
         value = doctor(args.home or home_path())
         print(json.dumps(value,ensure_ascii=False,indent=2))

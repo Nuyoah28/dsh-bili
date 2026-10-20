@@ -61,8 +61,11 @@ def video_input(value):
     return f'https://www.bilibili.com/video/{match[1]}?p={int(values[0])}'
 
 
-def public_addresses(host, resolver=socket.getaddrinfo):
+def public_addresses(host, resolver=None):
     validate_url('https://' + host)
+    if resolver is None:
+        from .dns_resolver import mode,resolve
+        resolver=resolve if mode()=='cloudflare' else socket.getaddrinfo
     try:
         entries = resolver(host, 443, type=socket.SOCK_STREAM)
     except OSError:
@@ -73,7 +76,7 @@ def public_addresses(host, resolver=socket.getaddrinfo):
         ip = ipaddress.ip_address(address[0].split('%')[0])
         if (not ip.is_global or ip.is_multicast or ip.is_reserved
                 or (getattr(ip, 'ipv4_mapped', None) and not ip.ipv4_mapped.is_global)):
-            raise LibraryError('网络安全策略拒绝非公网目标地址')
+            raise LibraryError('网络安全策略拒绝非公网目标地址（'+host+'；请检查DNS、hosts或代理Fake-IP配置）')
     return entries
 
 

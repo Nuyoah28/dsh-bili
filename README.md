@@ -168,6 +168,8 @@ node tools/library.mjs favorites export 456 --format markdown --out /你的目�
 
 不继承 `HTTP_PROXY`、`HTTPS_PROXY` 等应用代理变量，避免绕过目标检查；系统 VPN 的正常路由不修改。仅能通过本地 HTTP/SOCKS 代理上网的配置当前不支持，会明确失败。
 
+若系统DNS给B站返回`198.18.*`等Fake-IP，可显式设置`BILI_DNS_MODE=cloudflare`，仅为资料库使用带证书验证、固定公网引导的Cloudflare DoH（IPv4）。它仍检查所有返回IP并固定连接，不自动回退系统DNS、不修改VPN或全局DNS。见 [Linux DNS 配置与验收](deploy/DNS-linux.md)。
+
 ## 测试
 
 ```sh
@@ -280,8 +282,9 @@ node tools/library.mjs web
 | `BILI_WEB_PORT` | 网页端口，默认 `8765` | 重启后台；`web --port` 优先 |
 | `BILI_WEB_TOKEN` | 可选，至少24字符；优先于令牌文件 | 重启后台；空字符串不合法 |
 | `BILI_REMOTE_WRITES` | 仅精确值 `1` 启用 B站收藏夹移动/删除，默认关闭 | 重启后台 |
+| `BILI_DNS_MODE` | `system`（默认）或 `cloudflare`（资料库独立IPv4 DoH） | 重启后台；CLI启动时读取 |
 
-没有 `BILI_WEB_HOST` 开放监听项：当前只绑定 `127.0.0.1`。IPv6 地址、局域网 IP、HTTPS 反向代理域名不在当前 Host/Origin 白名单中。不要把它直接作为公网服务发布。
+没有 `BILI_WEB_HOST` 开放监听项：当前只绑定 `127.0.0.1`。远程浏览器访问需显式配置 `BILI_WEB_PUBLIC_ORIGIN` 并经HTTPS反向代理；MCP另需显式启用和认证，详见部署指南。
 
 ### 四、Linux 服务器 + Mac 远程访问
 

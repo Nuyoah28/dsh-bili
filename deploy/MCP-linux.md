@@ -191,6 +191,7 @@ PY
 - **首次点击后等待，第二次显示请求已用**：第一次可能已经签发授权码，但客户端回调尚未完成。新版原生浏览器表单会先显示“授权已通过”完成页，再以普通导航返回已登记的客户端，保留`form-action 'self'`而不让表单直接向外提交令牌。若自动返回失败，可点击完成页的“返回客户端”，不要重提旧表单。`127.0.0.1`回调要求浏览器与发起登录的Codex在同一台Mac，登录命令仍在等待；不要在Linux服务器启动登录后去另一台设备打开回环回调。服务端确认成功不等于客户端已完成令牌交换，以客户端最终提示为准。
 - **temporarily_unavailable**：授权尝试/登记/未完成页面超过上限，停止反复点击，核对客户端配置；异常大量登记时先关闭MCP，停服维护OAuth数据库再重新连接。
 - **有下载没字幕**：导入有效B站凭证后调用`bili_refresh_subtitles`。B站自身没有真实字幕时无法补出讲解内容。
+- **网络安全策略拒绝非公网目标地址**：运行`python -m bili_library dns-check`检查。若是系统Fake-IP，可按 [独立DNS部署指南](DNS-linux.md)启用`BILI_DNS_MODE=cloudflare`；公网检查继续保留。
 
 开发验证（仅开发机安装SDK，服务器无需）：`python -m pip install -r requirements-mcp-test.txt`，然后`python -m unittest discover -s tests -v`。实现已用官方Python MCP SDK验证Streamable HTTP初始化、工具发现、图片内容和缓存复用；真实ChatGPT工作区授权仍需部署后在你的账号内验收。
 

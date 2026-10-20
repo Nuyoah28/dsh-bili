@@ -1,0 +1,2 @@
+# Development-only interoperability client; not needed on the 1 GB server.
+mcp>=1.30,<2

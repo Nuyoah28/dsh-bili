@@ -1,0 +1,8 @@
+# Merge this table into ~/.codex/config.toml; never overwrite existing settings.
+# OAuth recommended, no token in this file. Register/login using the CLI or app UI.
+[mcp_servers.bili-library]
+url = "https://bili.alaner.space/mcp"
+startup_timeout_sec = 20
+tool_timeout_sec = 60
+# Alternative bearer authentication (local client environment required):
+# bearer_token_env_var = "BILI_MCP_TOKEN"

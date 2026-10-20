@@ -90,5 +90,31 @@
       "/tmp/bili-web-favorites.png",
       "/tmp/bili-web-mobile.png"
     ]
+  },
+  "mcp_validation": {
+    "date": "2026-10-21",
+    "result": "passed locally; production rollout and real ChatGPT workspace OAuth pending",
+    "official_client": "Python MCP SDK 1.30.0 (development-only)",
+    "transport": "stateless Streamable HTTP with JSON responses",
+    "checks": [
+      "initialize and tool discovery",
+      "official SDK OAuth discovery, DCR, S256 and browser-bound consent",
+      "independent bearer token, unauthorized and hostile origin rejection",
+      "code expiry/replay, audience/client/redirect binding",
+      "refresh rotation and replay-family revocation",
+      "persistent hashed OAuth credentials and revocation",
+      "actual JPEG bytes with timestamps, response size bounds and traversal rejection",
+      "copied user-provided video completed with stage=cached"
+    ],
+    "tools": 12,
+    "server_extra_runtime_dependencies": 0,
+    "real_account_writes": "none; not exposed through MCP",
+    "image_fixture": "copy of BV1iG4y1g7JH_929437359 acceptance archive",
+    "configuration": [
+      "deploy/MCP-linux.md",
+      "deploy/codex-mcp.toml.example",
+      "deploy/mcp.service.conf.example",
+      "tools/mcp-smoke.py"
+    ]
   }
 }

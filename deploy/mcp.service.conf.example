@@ -1,0 +1,4 @@
+# ~/.config/systemd/user/bili-library.service.d/mcp.conf
+[Service]
+Environment=BILI_MCP_ENABLED=1
+Environment=BILI_WEB_PUBLIC_ORIGIN=https://bili.alaner.space

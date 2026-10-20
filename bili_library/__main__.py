@@ -56,6 +56,7 @@ def parser():
     sub = p.add_subparsers(dest='command', required=True)
     sub.add_parser('doctor')
     sub.add_parser('init')
+    sub.add_parser('mcp-revoke',help='撤销全部OAuth授权（不撤销独立MCP令牌）；停服后执行，再重启清除待授权页面')
     s = sub.add_parser('web'); s.add_argument('--port',type=int,default=int(os.environ.get('BILI_WEB_PORT','8765')))
     s = sub.add_parser('submit'); s.add_argument('url')
     s = sub.add_parser('worker'); s.add_argument('--drain', action='store_true', help='串行处理当前队列后退出（默认行为）')
@@ -110,6 +111,13 @@ def execute(args, library):
     from .jobs import worker, process
     if args.command == 'init':
         return {'ok':True, 'home':str(library.home), 'config':library.config}
+    if args.command == 'mcp-revoke':
+        import sqlite3
+        path=library.home/'secrets/mcp-oauth.sqlite3'
+        if path.exists():
+            with sqlite3.connect(path) as db:
+                db.execute('DELETE FROM grants');db.execute('DELETE FROM codes');db.execute('DELETE FROM spent_refresh')
+        return {'ok':True,'message':'OAuth授权已撤销；请重启后台清除待授权页面。独立MCP令牌未改变。'}
     if args.command == 'submit':
         return library.submit(args.url)
     if args.command == 'worker':

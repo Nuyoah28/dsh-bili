@@ -1,6 +1,6 @@
 {
   "name": "dsh-bili-scroll",
-  "version": "0.3.0-local.1",
+  "version": "0.4.0-local.1",
   "description": "本地 B站视频资料库：按链接归档视频、字幕和截图，导出收藏夹列表",
   "keywords": [
     "dsh",
@@ -44,7 +44,9 @@
     "tools/library.mjs",
     "bili_library/web/*",
     "tools/library.env.example",
-    "deploy/*.example"
+    "tools/mcp-smoke.py",
+    "deploy/*.example",
+    "deploy/*.md"
   ],
   "engines": {
     "dsh": ">=0.1.7-rc.1",

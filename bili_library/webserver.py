@@ -115,6 +115,7 @@ class AdminServer(ThreadingHTTPServer):
     allow_reuse_address=True
     def __init__(self,home,port=8765,token=None,remote=False):
         self.home=Path(home);self.sessions={};self.sessions_lock=threading.Lock();self.attempts={}
+        self.request_slots=threading.BoundedSemaphore(8)
         self.remote=remote
         self.public_origin=os.environ.get('BILI_WEB_PUBLIC_ORIGIN','').strip()
         self.public_host=None
@@ -138,6 +139,11 @@ class AdminServer(ThreadingHTTPServer):
                 with token_path.open('x',encoding='utf-8') as f: os.chmod(token_path,0o600);f.write(token+'\n')
         if len(token)<24: raise LibraryError('后台访问令牌至少需要 24 个字符')
         self.token=token;self.controller=None
+        self.mcp=None
+        if os.environ.get('BILI_MCP_ENABLED')=='1':
+            if not self.public_origin: raise LibraryError('启用MCP必须配置BILI_WEB_PUBLIC_ORIGIN及HTTPS反向代理')
+            from .mcp_auth import Auth
+            self.mcp=Auth(self.home,self.public_origin)
         try:
             self.controller=Controller(self.home)
             super().__init__(('127.0.0.1',port),Handler)
@@ -149,9 +155,22 @@ class AdminServer(ThreadingHTTPServer):
         super().server_close()
         if self.controller: self.controller.close();self.controller=None
 
+    def process_request(self,request,client_address):
+        if not self.request_slots.acquire(blocking=False):
+            self.shutdown_request(request);return
+        try: super().process_request(request,client_address)
+        except Exception:
+            self.request_slots.release();raise
+
+    def process_request_thread(self,request,client_address):
+        try: super().process_request_thread(request,client_address)
+        finally: self.request_slots.release()
+
 
 class Handler(BaseHTTPRequestHandler):
     server_version='BiliLibrary'
+    def setup(self):
+        super().setup();self.connection.settimeout(15)
     def log_message(self,*args): pass  # no request/query/cookie logging
 
     def headers_common(self):
@@ -161,12 +180,13 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Cache-Control','no-store')
         self.send_header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; media-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 
-    def respond(self,value,status=200,cookie=None):
+    def respond(self,value,status=200,cookie=None,extra_headers=None):
         body=json.dumps(value,ensure_ascii=False,allow_nan=False).encode()
         self.send_response(status);self.headers_common()
         self.send_header('Content-Type','application/json; charset=utf-8')
         self.send_header('Content-Length',str(len(body)))
         if cookie: self.send_header('Set-Cookie',cookie)
+        for key,value in (extra_headers or {}).items(): self.send_header(key,value)
         self.end_headers();self.wfile.write(body)
 
     def origin_check(self):
@@ -250,10 +270,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self): self.dispatch(False)
     def do_POST(self): self.dispatch(True)
+    def do_DELETE(self):
+        from .mcp_http import handle
+        if not handle(self,urlsplit(self.path).path,False): self.respond({'error':'接口不存在'},404)
 
     def dispatch(self,write):
         lib=None
         try:
+            from .mcp_http import handle
+            if handle(self,urlsplit(self.path).path,write): return
             self.origin_check()
             path=urlsplit(self.path).path
             if not write and path in ('/','/app.js','/style.css'):
@@ -282,7 +307,7 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/rules': self.respond({'rules':m.rules(lib)});return
             if path=='/api/config':
                 from .__main__ import doctor
-                self.respond({'config':lib.config,'doctor':doctor(lib.home),'remote_enabled':self.server.remote,
+                self.respond({'config':lib.config,'doctor':doctor(lib.home),'remote_enabled':self.server.remote,'mcp_enabled':self.server.mcp is not None,
                     'credentials_present':(lib.home/'secrets/bilibili.json').exists() or (lib.home.parent/'bili_credential.json').exists()});return
             if path.startswith('/api/video/'):
                 vid=unquote(path[len('/api/video/'):]);video=lib.video(vid)

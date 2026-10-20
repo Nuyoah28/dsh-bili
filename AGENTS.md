@@ -14,7 +14,8 @@
 - 视频身份为 BV＋CID，真实字幕必须保留起止时间，弹幕不能当字幕。
 - 任务串行，网络必须走域名/IP 固定检查；不要绕过网络检查来适配代理。
 - 测试：`python3 -m unittest discover -s tests -v`、`node selfcheck.mjs`；真实媒体测试需 FFmpeg/ffprobe。
-- 远程 MCP 和模型总结属于后续阶段；网页仅监听回环。远程访问可用 SSH 隧道，或显式配置 BILI_WEB_PUBLIC_ORIGIN 后经 HTTPS 反向代理访问，保留令牌、CSRF 与严格来源校验。
+- MCP 显式设置 BILI_MCP_ENABLED=1 后在网页同一进程的 /mcp 提供，复用串行控制器。支持独立令牌及 OAuth PKCE/DCR；凭证和授权数据在 secrets/，实际截图以 MCP image 内容返回。账号写入/永久删除不暴露为MCP工具。
+- 总结由已连接的 Codex / ChatGPT 执行；不在1核1GB服务器运行模型。网页仅监听回环；配置 BILI_WEB_PUBLIC_ORIGIN 后经HTTPS反向代理访问，保留认证、CSRF与严格来源校验。
 
 ---
 

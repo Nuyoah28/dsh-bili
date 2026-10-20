@@ -227,5 +227,27 @@ class HTTPTests(unittest.TestCase):
         self.assertNotIn('my-account-secret',json.dumps(self.request('/api/config')[1]))
         self.assertEqual((self.home/'secrets/bilibili.json').stat().st_mode&0o777,0o600)
 
+    def test_public_origin_cookie_csrf_and_host_pairing(self):
+        self.server.public_origin='https://bili.alaner.space'
+        self.server.public_host='bili.alaner.space'
+        headers={'Host':'bili.alaner.space','Origin':'https://bili.alaner.space'}
+        status,_,response=self.request('/api/login',{'token':self.server.token},extra=headers)
+        self.assertEqual(status,200)
+        self.assertIn('; Secure',response['Set-Cookie'])
+        self.cookie=response['Set-Cookie'].split(';')[0]
+        self.csrf=self.request('/api/session',extra=headers)[1]['csrf']
+        self.assertEqual(self.request('/api/tasks',{'url':ITEM['url']},extra=headers)[0],200)
+        self.assertEqual(self.request('/api/tasks',{'url':ITEM['url']},extra={**headers,'Origin':'http://bili.alaner.space'})[0],403)
+        self.assertEqual(self.request('/api/session',extra={'Origin':headers['Origin']})[0],403)
+        self.csrf='wrong'
+        self.assertEqual(self.request('/api/tasks',{'url':ITEM['url']},extra=headers)[0],403)
+        self.csrf=self.request('/api/session',extra=headers)[1]['csrf']
+        self.assertIn('; Secure',self.request('/api/logout',{},extra=headers)[2]['Set-Cookie'])
+
+    def test_invalid_public_origin_fails_before_binding(self):
+        for origin in ['http://bili.example.com','https://bili.example.com/','https://u:p@bili.example.com','https://bili.example.com:bad','https://bili.example.com?x=1']:
+            with patch.dict(os.environ,{'BILI_WEB_PUBLIC_ORIGIN':origin}),self.assertRaises(LibraryError):
+                AdminServer(self.home,port=0,token=self.server.token)
+
 
 if __name__=='__main__': unittest.main()

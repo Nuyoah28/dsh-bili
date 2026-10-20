@@ -14,7 +14,7 @@
 - 视频身份为 BV＋CID，真实字幕必须保留起止时间，弹幕不能当字幕。
 - 任务串行，网络必须走域名/IP 固定检查；不要绕过网络检查来适配代理。
 - 测试：`python3 -m unittest discover -s tests -v`、`node selfcheck.mjs`；真实媒体测试需 FFmpeg/ffprobe。
-- 远程 MCP 和模型总结属于后续阶段；网页仅监听回环，远程访问用 SSH 隧道，不开放公网服务。
+- 远程 MCP 和模型总结属于后续阶段；网页仅监听回环。远程访问可用 SSH 隧道，或显式配置 BILI_WEB_PUBLIC_ORIGIN 后经 HTTPS 反向代理访问，保留令牌、CSRF 与严格来源校验。
 
 ---
 

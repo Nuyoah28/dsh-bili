@@ -116,6 +116,18 @@ class AdminServer(ThreadingHTTPServer):
     def __init__(self,home,port=8765,token=None,remote=False):
         self.home=Path(home);self.sessions={};self.sessions_lock=threading.Lock();self.attempts={}
         self.remote=remote
+        self.public_origin=os.environ.get('BILI_WEB_PUBLIC_ORIGIN','').strip()
+        self.public_host=None
+        if self.public_origin:
+            parsed=urlsplit(self.public_origin)
+            try: port_=parsed.port
+            except ValueError: raise LibraryError('BILI_WEB_PUBLIC_ORIGIN 端口无效') from None
+            if (parsed.scheme!='https' or not parsed.hostname or parsed.username is not None
+                or parsed.password is not None or parsed.path or parsed.query or parsed.fragment
+                or not re.fullmatch(r'[a-z0-9.-]+(?::[0-9]+)?',parsed.netloc)
+                or port_==0):
+                raise LibraryError('BILI_WEB_PUBLIC_ORIGIN 必须是完整 HTTPS 来源，不含路径，例如 https://bili.example.com')
+            self.public_host=parsed.netloc
         lib=Library(self.home);lib.close()
         token_path=self.home/'secrets'/'web-token'
         token=token or os.environ.get('BILI_WEB_TOKEN')
@@ -160,10 +172,19 @@ class Handler(BaseHTTPRequestHandler):
     def origin_check(self):
         port=self.server.server_address[1]
         allowed={f'127.0.0.1:{port}',f'localhost:{port}'}
-        if self.headers.get('Host') not in allowed: raise PermissionError('不允许的 Host')
+        host=self.headers.get('Host')
+        if self.server.public_host and host==self.server.public_host:
+            origins={self.server.public_origin}
+        elif host in allowed:
+            origins={'http://'+host}
+        else: raise PermissionError('不允许的 Host')
         origin=self.headers.get('Origin')
-        if origin and origin not in {'http://'+host for host in allowed}: raise PermissionError('不允许跨站请求')
+        if origin and origin not in origins: raise PermissionError('不允许跨站请求')
         if self.headers.get('Sec-Fetch-Site')=='cross-site': raise PermissionError('不允许跨站请求')
+
+    def session_cookie(self,value,max_age):
+        secure='; Secure' if self.headers.get('Host')==self.server.public_host else ''
+        return f'bili_session={value}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_age}'+secure
 
     def session(self):
         cookie=SimpleCookie()
@@ -201,7 +222,7 @@ class Handler(BaseHTTPRequestHandler):
             self.server.sessions={k:v for k,v in self.server.sessions.items() if v['expires']>now}
             if len(self.server.sessions)>100: self.server.sessions.clear()
             self.server.sessions[sid]={'csrf':secrets.token_urlsafe(32),'expires':now+8*3600}
-        self.respond({'ok':True},cookie='bili_session='+sid+'; Path=/; HttpOnly; SameSite=Strict; Max-Age=28800')
+        self.respond({'ok':True},cookie=self.session_cookie(sid,28800))
 
     def file(self,path,mime=None,attachment=False):
         if not path.is_file() or path.is_symlink(): raise LibraryError('文件不存在')
@@ -325,7 +346,7 @@ class Handler(BaseHTTPRequestHandler):
             # Invalidate the current session, not just the browser cookie.
             cookie=SimpleCookie();cookie.load(self.headers.get('Cookie',''))
             with self.server.sessions_lock: self.server.sessions.pop(cookie['bili_session'].value,None)
-            self.respond({'ok':True},cookie='bili_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0');return None
+            self.respond({'ok':True},cookie=self.session_cookie('',0));return None
         if path=='/api/tasks': return lib.submit(str(data.get('url','')))
         if path=='/api/task-action':
             from .__main__ import parser,execute

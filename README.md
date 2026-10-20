@@ -185,6 +185,8 @@ BILI_FFMPEG=/路径/ffmpeg BILI_FFPROBE=/路径/ffprobe \
 
 ## 网页后台使用
 
+Linux 域名 HTTPS 访问（包含 Xray 端口冲突处理）：见 [部署指南](deploy/HTTPS-linux.md)。默认仍仅监听回环；反向代理前显式配置 `BILI_WEB_PUBLIC_ORIGIN`。
+
 初始化环境后运行：
 
 ```sh

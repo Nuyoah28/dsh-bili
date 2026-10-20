@@ -1,0 +1,94 @@
+{
+  "date": "2026-10-21",
+  "environment": {
+    "system": "macOS arm64",
+    "logical_cpus": 8,
+    "memory_bytes": 8589934592,
+    "python": "3.12.14",
+    "yt_dlp": "2026.8.19",
+    "development_tools": "isolated under /tmp; no system Python or VPN changes"
+  },
+  "video": {
+    "submitted_url": "https://b23.tv/Sh6MJ5i",
+    "id": "BV1iG4y1g7JH_929437359",
+    "bvid": "BV1iG4y1g7JH",
+    "cid": 929437359,
+    "page": 1,
+    "title": "快速求伴随矩阵的小技巧",
+    "part_title": "快速求伴随矩阵的小技巧",
+    "source": "https://www.bilibili.com/video/BV1iG4y1g7JH?p=1",
+    "duration": 215.0,
+    "media": "video.mkv",
+    "height": 720,
+    "bytes": 5520638,
+    "subtitle_status": "missing",
+    "sha256": "ea585065a7b1aed7419f43cc33c27fbca1d3c150e1e391967478ca2830770ce1"
+  },
+  "validation": {
+    "download": "passed, <=720p, ffprobe validated",
+    "initial_frames": 20,
+    "supplemental_frame": {
+      "requested": 83.0,
+      "timestamp": 83.0
+    },
+    "total_frames": 21,
+    "cache": "second submit completed with stage=cached in sandbox without network",
+    "subtitle": "missing: Bilibili requires login; no substitute text created",
+    "favorites": {
+      "result": "passed against user-provided live folder",
+      "folder_id": 1169839356,
+      "reported_count": 533,
+      "exported_count": 533,
+      "formats": [
+        "json",
+        "csv",
+        "markdown"
+      ],
+      "extra_download_tasks": 0,
+      "all_titles_and_links_present": true,
+      "bv_videos": 530,
+      "episodes_with_original_playback_links": 3
+    },
+    "tests": "24 unittest cases including actual FFmpeg/ffprobe processing; DSH selfcheck with old autonomous settings enabled"
+  },
+  "test_artifact_directory": "/tmp/bili-library-acceptance/videos/BV1iG4y1g7JH_929437359",
+  "web_validation": {
+    "date": "2026-10-21",
+    "automated_tests": 51,
+    "result": "passed",
+    "browser_workflow": [
+      "login",
+      "video details and actual images",
+      "submit video",
+      "background queue with cached completion",
+      "search 533 favorite entries",
+      "classification preview and save",
+      "tags and notes",
+      "move local video to trash and restore",
+      "settings and environment checks"
+    ],
+    "responsive_viewports": [
+      {
+        "width": 1280,
+        "height": 900
+      },
+      {
+        "width": 390,
+        "height": 844
+      }
+    ],
+    "console_errors": 0,
+    "preview_data": "/tmp/bili-web-preview (copy; original archive unchanged)",
+    "remote_account_writes": "not performed; transport, ownership, one-use confirmation, expiry and verification tested with simulated API",
+    "configuration_templates": [
+      "tools/library.env.example",
+      "deploy/bili-library.service.example",
+      "deploy/personal.bili-library.plist.example"
+    ],
+    "screenshots": [
+      "/tmp/bili-web-desktop.png",
+      "/tmp/bili-web-favorites.png",
+      "/tmp/bili-web-mobile.png"
+    ]
+  }
+}

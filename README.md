@@ -1,170 +1,396 @@
-# dsh-bili-scroll ｜ 刷B站
+# 本地 B站视频资料库
 
-> **先看三行**
-> - 需要 **dsh ≥ `0.1.7-rc.1`**（本机是 `0.1.7-rc.2`）。⚠️ 版本不满足时，**内核会静默跳过这个插件** —— 装了跟没装一样，不会报错。
-> - **空间**：不装「本地转写」约 **84 MB**；装了转写约 **1 GB**（其中 Whisper 模型 538 MB，可在设置里换更小的模型）。
-> - 装完**必须重启一次** dsh（插件在 bundle 层组装）。
-> - ⚠️ **桌面版 DSH（NEXT / 0.2.x）**：**0.1.3 及以前的版本在桌面版上装不起来** —— 插件整条不激活，
->   DSH 只留一句 `warning: 1 entry did not activate … failed to import`（根因是宿主半 import 的两个包
->   在桌面版 profile 里没被安装，详见下面「装不上」那节的第 5 条）。**0.1.4 起已修** ✓。
->   另有用户反馈桌面版上「自动跑那一轮会卡住」—— 卡住就先只用设置页的「**现在跑一轮**」手动跑（那条稳）。
->
-> ⚠️ **装的是旧版吗？** 如果设置页里那个按钮写的是「**重装依赖**」（而不是「**重装主依赖**」），说明你装的是 0.1.0 ——
-> 跑一次 `dsh plugin --profile web add dsh-bili-scroll` 升级就好（那一版建 Python 环境时缺一个参数，
-> 依赖装不上、二维码也画不出来，重装多少次都一样）。
+这是从 `dsh-bili-scroll` 二次开发的个人资料库。你主动提交链接，归档**一个分P**的视频、元数据、真实字幕与截图；另外可以只导出收藏夹的视频标题和链接。
 
-> 🎬 演示视频：**https://www.bilibili.com/video/BV1d8pU6xEZX/**　·　💬 交流群（QQ）：**1128547307**
->
-> DSH 插件：**每天替你刷一轮 B站** —— 它自己搜、**读字幕原文**判断、把值得的写成报告，特别值得的会留一条评论 **@ 你**。
-> **你收到的每一条 @，都是它先筛过一遍的。**
+没有每日推荐、定时挑选、自动评论、私信或收藏。提供带认证的本机管理网页，支持本地资料增删、回收站、收藏夹分类，以及经确认后移动/删除本人 B站收藏条目。没有远程 MCP / 公网 API，也不自动运行 Whisper 或上传媒体到云端。
 
-## 它做什么
+## 环境和安装
 
-- 按你填的关键词（留空则用内置那几组）搜近几天的视频
-- **逐条读字幕原文再判断**（不看摘要）；没字幕的直接跳过 —— 除非你开了「本地转写」
-- 写一份 Markdown 报告到 `out/<日期>.md`：每条含「为什么值得」+「它自己的一句话」；每条的段首固定写成 `### BV号` —— 插件数今天挑了几条，数的就是这些标题行
-- 开着「自动评论」时，每轮发一条评论、**@ 你**一次（默认每轮 1 条，设置页可调到每轮最多 20 条）
-- 可以在**峰谷时段自动跑**（DeepSeek 的优惠时段），省 token
+支持 **macOS / Linux**，Python 3.10+（推荐 3.12）、Node.js 22+、FFmpeg 和 ffprobe。SQLite 使用 Python 标准库。Windows 的进程锁适配尚未实现。
 
-## 装之前（一条前提，30 秒）
+先在项目目录运行只读检查：
 
-机器上要有 **`Python 3.10+` 或 `uv`** —— **有一个就够**：
-
-- **有 `uv` 最好**：单个 ~32 MB 的 exe，**解压就能用、不用管理员、不用进 PATH**，而且它还能自己把 Python 拉下来；
-- 只有 Python 也行（装官方安装器时记得勾 **`Add to PATH`**）；
-- ⭐ **两个都没有？也没关系**：点「装依赖」时**插件会自己下一份 `uv` 放到自己的家目录**
-  （单文件、约 15MB、**免管理员、不用进 PATH** ✓），之后全程自动 ✓
-  · 它会**先直连 GitHub，不通就走国内加速代理**，还配了 PyPI 镜像兜底 ✓
-  · 下载完会**核对官方 `sha256`**（对不上就丢弃换下一个源 ✓）—— 因为它下来的东西是要**被执行**的
-  · ⚠️ **如果杀软 / Windows Defender 报这个下载**：把插件家目录 `%USERPROFILE%\.dsh\bili-duty\bin\` **加白**即可；
-    不想加白也行，自己装一份 uv 或 Python 3.10+ 就绕过去了 ✓
-
-> ✅ **已经做到了**（v0.1.1 起）：插件会**自己把 `uv` 下到自己的家目录** ⇒ 这条前提不用用户操心、也不用管理员权限。
-> ⚠️ 万一它自己也下不动（有用户反馈桌面版上这条链路经常不通）：**手动放一份 `uv.exe` 到 `<家目录>\bin\`** 就行 ——
-> 插件会**用那一份、跳过下载**（你的 `PATH` 里本来就有 `uv` 的话，它直接用那个）。
-
-## 装
-
-
-```bash
-# ⭐ 推荐这条（npm 那边账号被暂停，最新版一直在这里）
-dsh plugin --profile web add github:c1overzz/dsh-bili-scroll
-
-# npm 恢复之后可以改回这条（更快、不用加速器）
-dsh plugin --profile web add dsh-bili-scroll
+```sh
+node tools/library.mjs doctor
 ```
 
-> **github 是目前的主通道。** npm 上的 `latest` 停在 0.1.7（账号被临时暂停，工单处理中），
-> 所以下面「装不上」那一节里凡是提到 npm 的地方，请一律按 github 那条理解。
-（⭐ 最省事的一条：把仓库链接贴给你自己的 dsh，说「**帮我装这个插件**」，它会自己装。）
+若只有旧 Python 或没有 Python，运行以下命令：它会复用已有 uv，或使用原项目的 uv 下载逻辑，在资料库内创建 Python 3.12 独立环境并安装 yt-dlp。不会更改系统 Python，不安装 Whisper / torch。
 
-⚠️ 装完**必须重启一次 dsh**（bundle 层要重启才组装）。然后进 **设置 → 刷B站**。
+```sh
+node tools/library.mjs setup
+node tools/library.mjs doctor
+```
 
-## 装不上 / 卡住时，先看这五条（都是用户实测撞过的）
+FFmpeg 和 ffprobe 复用 PATH 中的安装，也可用私有工具路径，**不要求全局安装**：
 
-1. **桌面版（DSH NEXT / 0.2.x）上"自动跑"会卡住** —— 有用户反馈：它起那一轮用的是
-   `dsh --profile headless …`，桌面版上容易卡在那儿。⇒ **先用设置页的「现在跑一轮」手动跑**（那条是稳的）；
-   能不能自动跑，等你确认过自己那台桌面版的版本与 profile 再说。
-2. **「装依赖」卡住、或者扫码时一直不出二维码** —— 大概率是 0.1.0 那版（见开头那个按钮指纹，跑一次 `add` 就升级了）。
-   不想升级也行，救急一句：`<家>\.venv\Scripts\python.exe -m ensurepip --upgrade`，再点一次「重装主依赖」。
-3. **它下不动 `uv`**（桌面版上这条链路经常不通）⇒ 自己放一份 `uv.exe` 到 `<家目录>\bin\`，
-   插件会用那一份、跳过下载。
-4. **「本地转写」是两段式的** —— 只打开开关**不够**，还得点它下面那个「**装转写依赖**」。
-   没装的时候，没字幕的视频会被**跳过**（报告里现在会写「**因无字幕跳过 N 条**」，你能一眼看出漏了几条）。
-5. ⭐ **桌面版：装完设置页里根本不出现「刷B站」，日志只有一句 `1 entry did not activate … failed to import`** ——
-   这是 0.1.3 及以前在桌面版上的一个真 bug：插件宿主半 import 的两个包是 *optional peer*，
-   而桌面版 profile（`autoInstallPeers: false`）**不会装它们** ⇒ 插件整条不激活。
-   **0.1.4 起已修**（不再裸 import 那两个包）。⇒ 升级一次就好：`dsh plugin --profile desktop add dsh-bili-scroll`。
-   ⚠️ 我们自己也只在 **npm 0.1.7-rc.x + web profile** 上实测过；桌面版这条路靠用户反馈修好的 ——
-   装完还是不行的话，把 `duty.log` 里那几行发来（里面会写清楚"宿主依赖是从哪儿取的"）。
+```sh
+export BILI_FFMPEG=/你的工具目录/ffmpeg
+export BILI_FFPROBE=/你的工具目录/ffprobe
+```
 
-## 首次使用（两步）
+`setup` 只安装 Python 环境和 yt-dlp；FFmpeg/ffprobe 二进制由你放入工具目录，`doctor` 会检查能否执行。下载媒体时不重新编码，FFmpeg 使用一个线程，下载默认限速 2 MiB/s。不会改 VPN、系统代理或其他服务。
 
-1. **装主依赖** —— 设置页点「装主依赖」：在插件自己的家目录建一个独立 venv，装 4 个包
-   （`bilibili-api-python` / `aiohttp` / `mcp<2` / `qrcode`）。**走国内镜像 + uv，通常几十秒**（进度写 `install.log`，不卡页面）。
-2. **扫码登录** —— 点「扫码登录」，用手机 B站 扫页面上那张码。
-   ⚠️ **确认时选「记住我 / 长期」那张**（选 24 小时的话，明天就得重扫）。
-   凭证只落在你本机的插件家目录：`<DSH_HOME>/bili-duty/bili_credential.json`，不上传任何地方。
+所有命令也可以由你自己的 Python 3.10+ 环境直接执行：`python -m bili_library ...`。Node 启动器支持 `BILI_LIBRARY_PYTHON` 指定解释器。`npm link` 后可使用短命令 `bili-library`，也可以始终使用 `node tools/library.mjs`。
 
-## 设置页里有什么
+## 数据目录
 
-| 项 | 说明 |
-|---|---|
-| **峰谷时段自动刷** | 总开关；**打开之后才展开**「中午谷时 12:00–14:00」「晚上/夜间谷时 18:00–09:00」两个子开关。依据 DeepSeek 官方定价：**工作日 9:00–12:00、14:00–18:00 是高峰，其余（含整个周末）都是谷时** |
-| **每天最多挑几条** | 数字自己填；填 0 = 不自动刷（但还能手动跑） |
-| **自动评论并 @ 你** | **默认关**；打开后展开两栏：**每轮最多发几条评论**、**要 @ 谁（B站 昵称）** —— ⚠️ **留空就不发评论**（评论的意义就是 @ 那一下） |
-| **本地转写没字幕的视频** | **默认关** —— 要在本机装 Whisper、下几百 MB 模型 |
-| **关注关键词** | 一行一个；留空用内置那几组 |
-| **工作区** | 填**你自己平时用的那个工作区路径**（放 `AGENTS.md` 的那个目录）⇒ 它按那里的人设说话；⭐ **留空 = 不读设定、按中性说话**（不会去猜，也不会读错人设） |
-| **回复评论（只回楼中楼）** | **默认关**；开了之后展开「每轮最多回几条」—— 只回**直接回复到它那条评论下面的人**，不参与别人的讨论 |
-| **日报写多细** | `完整 / 薄版 / 不写`；薄版每条一两行（输出比输入贵 200 倍，薄版省的是真钱） |
-| 现在跑一轮 / 装主依赖 / 扫码登录 / 看今天的报告 / 打开报告文件夹 | 版本号就在这一行上面（**点「检查更新」可以看有没有新版**） |
+默认 `$DSH_HOME/bili-duty/library/`；没有设置 `DSH_HOME` 时为 `~/.dsh/bili-duty/library/`。可用环境变量覆盖：
 
-> ⭐ **这些设置同时写在两处**：插件自己的 `<DSH_HOME>/bili-duty/config.json`，以及 **DSH 原生「插件设置」**里的同一套字段。
-> 在这一页改 ⇒ **以这一页为准，并同步写进原生设置**（写不进去会提示你）；某个字段如果你在 **DSH 原生设置页**里显式设过 ⇒ **那个字段以原生设置页为准**。
+```sh
+export BILI_LIBRARY_HOME=/你的数据目录/bili-library
+node tools/library.mjs init
+```
 
-## 红线（写死在提示词里，不靠自觉）
+Python CLI 另外支持全局 `--home /路径`；使用自动 `setup` 时应通过 `BILI_LIBRARY_HOME` 选择环境及数据位置。
 
-- 不透露你的隐私：账号、机器路径、你聊过的话 —— 一个字都不进评论
-- 每轮按设置里定的条数发评论（默认 1 条，最多 20 条）；同一视频只评论一次；不刷屏、不吵架
-- 不确定的事**不编**（报告里如实写「没查到」）
+```text
+library/
+  config.json
+  index.sqlite3
+  worker.lock
+  secrets/
+    bilibili.json          # B站账号凭证，0600
+    models.json            # 预留模型密钥文件，第一阶段不创建、不启用
+  videos/BVxxxxxxxxxx_CID/
+    metadata.json
+    video.mkv              # 或实际下载的 mp4/webm
+    subtitles.json
+    frames/index.json
+    frames/*.jpg
+  tmp/                     # 任务临时目录，正常失败/取消后清理
+  exports/                 # 收藏夹导出
+  .venv/                   # setup 创建的独立环境
+```
 
-## 它是怎么跑的
+配置、凭证和媒体都不写入插件包。POSIX 权限：资料库目录 0700、凭证及 JSON 文件 0600。模型密钥与 B站凭证独立存放，不放进源码、返回结果或日志。
 
-- 插件**内部**起一个 Python MCP（下面那个开源项目，已内置），把它的能力注册成 DSH 工具
-- 定时到点 → 起一个 headless dsh 会话，把 `prompts/duty.md`（它一轮要做的事）+ 当天设置交给它
-- 那一轮的**工作目录 = 插件自己的家目录**（它被沙箱关着，只写得了自己那一亩三分地）；
-  ⭐ 你填的**工作区里的 `AGENTS.md` 由插件读进来、内联进提示词** ⇒ **它按你的设定说话**，
-  而不是用一套通用人格
-- ⭐ **那一轮拿不到整台工具**：只给它**四个只读的**（搜视频 / 读字幕 / 读评论 / 看视频信息），
-  开了「自动评论」或「回复评论」才多给一个**发评论** —— 上传视频、发动态、私信、抓全站那些**根本不注册**，
-  模型连它们的名字都看不到
-- ⭐ **值班章程（`prompts/duty.md`）升级的规矩**：插件记着「上次铺的是哪一版」（`charter.sha256`）——
-  你**没改过**就跟着插件自动升级；**改过**就保留你那份、把新版另存成 `duty.md.new`（日志里会说一句），自己合一下。
-  ⚠️ **从 0.1.5 及以前升上来的第一次没有账本可比** ⇒ 保守地当成「你改过」：新版落成 `duty.md.new`；
-  确认自己没改过，把它覆盖到 `duty.md` 就行（一次的事，之后就有账本了）
+## 提交、处理与查询
 
-## 如果你是一个 AI 助手，正在帮用户装这个插件
+```sh
+# 显式选择 P2；不带 p 参数仅处理 P1，不遍历合集
+node tools/library.mjs submit 'https://www.bilibili.com/video/BVxxxxxxxxxx?p=2'
+# BV 号和 b23.tv 短链接也支持
+node tools/library.mjs submit 'https://b23.tv/Sh6MJ5i'
 
-按顺序来，别跳步：
+# 前台串行处理当前队列后退出；提交本身不开始下载
+node tools/library.mjs worker --drain
 
-1. **先确认前提**：机器上有 `Python 3.10+` 或 `uv` 吗？（查 `python --version` / `uv --version`）
-   两个都没有 ⇒ **建议装 `uv`**（单文件 exe、免管理员、能自带 Python）；
-2. **装插件**：`dsh plugin --profile web add github:c1overzz/dsh-bili-scroll`
-   （npm 上的 `dsh-bili-scroll` 同名同内容，审核通过后用 `add dsh-bili-scroll` 更省事）
-3. ⚠️ **必须提醒用户重启一次 dsh** —— bundle 层要重启才组装，不重启插件不会生效；
-4. 重启后请用户进 **设置 → 刷B站**：先点「**装依赖**」（几十秒，进度就显示在页面下面）、再点「**扫码登录**」
-   （手机 B 站扫码，**确认时选"记住我 / 长期"**）；
-5. **不要**替用户打开「自动评论并 @ 你」—— 那是拿用户的号说话。要用得让用户自己在设置里填「要 @ 谁」。
+node tools/library.mjs task
+node tools/library.mjs task 任务ID
+node tools/library.mjs list
+node tools/library.mjs show BVxxxxxxxxxx_CID
+node tools/library.mjs cancel 任务ID
+node tools/library.mjs retry 任务ID
+```
 
-## 依赖与致谢
+任务状态：`queued`、`running`、`completed`、`failed`、`cancelled`；运行阶段见 `stage`。错误信息保存在任务中，CLI 执行失败返回非零退出码。任务中断后，下次 worker 将其标记失败，使用 `retry` 显式重试。worker 不常驻、不注册定时器。
 
-- 内置 [**bilibili-mcp**](https://github.com/adoresever/bilibili-mcp)（MIT，Copyright (c) 2026 AGI_Ananas）——
-  搜索 / 字幕 / 评论 / 发评论这些能力来自它；本插件只做「**挑什么、什么时候挑、要不要说话**」这一层
-- 需要本机有 **Python 3.10+**（会用 `uv` 或 `python -m venv` 建独立环境），不需要它已经进 PATH
-- Python 依赖只有 4 个（`bilibili-api-python` / `aiohttp` / `qrcode` / `mcp`，见 `vendor/bilibili-mcp/requirements.txt`）；`mcp` **必须锁 `<2`**（2.x 起不来）
+同一 BV 的不同 CID 是不同资料。相同资料已有完整视频、元数据、字幕状态文件及初始截图时，重复提交命中 `stage: cached`，不重新联网下载；缺失的文件会补齐。字幕缺失也可以归档成功，`subtitle_status` 独立显示，不能据此声称已读完课程。
 
-## 路线图
+## 登录与字幕
 
-- **0.1.x（当前 = 0.1.5）**：内置 MCP + 扫码登录 + 章程 + 设置页（峰谷级联开关 / 定量刷 / 自动评论 / 回复评论 / 工作区 / 日报三档）+ 谷时定时器 + 报告 + 看报告与打开文件夹 + 版本徽章 / 检查更新 / 一键升级 + **评论发出后复核**（0.1.4 起）
-- **0.1.6（在做）**：每轮记账（token 与花费）· 周末时段 · 数据目录可配 · 「停掉这一轮」按钮
-- **v0.2**：**用 JS 重写那几个接口 ⇒ 不再需要 Python**（零安装）；报告归档、失败重试
+可保留 DSH 插件的扫码登录和主依赖安装界面；重启 DSH 后设置项显示为“B站资料库”。默认数据位置下自动复用其 `bili_credential.json`。也可以导入原扫码登录生成的 JSON 文件：
 
-## 许可证
+```sh
+node tools/library.mjs credentials-import /私有目录/bili_credential.json
+node tools/library.mjs subtitles BVxxxxxxxxxx_CID --json
+# 登录后仅刷新字幕，不重新下载视频
+node tools/library.mjs subtitles BVxxxxxxxxxx_CID --refresh
+```
 
-MIT（内置的 `vendor/bilibili-mcp/` 另见该目录下的 LICENSE）
+凭证 JSON 使用 `sessdata`、`bili_jct`、`buvid3`、`dedeuserid` 四个字段。不在命令参数中输入 Cookie 值。
 
-## 交流与反馈
+字幕只读取平台字幕轨，人工字幕优先于 AI 字幕；不会把弹幕、简介或平台摘要当字幕。统一格式：
 
-- **遇到问题先去群里问一句** —— 安装、报错、设置这些，群里大多有人踩过；比自己从头试快得多。
-  - **QQ 交流群：1128547307**
-- **确实像 bug 的**（能复现、有报错原文），欢迎开 [Issue](https://github.com/c1overzz/dsh-bili-scroll/issues/new)：
-  请带上 **dsh 版本 / 插件版本（设置页顶部徽章）/ 系统（web 还是桌面版）/ 报错原文或 `duty.log` 最后几十行**。
-  有这个我基本一轮就能定位；只说"装不上"，通常要来回问三四次。
-- **想改进它**：欢迎 PR。⚠️ 但请**一件事一个 PR**（不要一个 PR 塞五个功能），
-  这样我能独立合并、出问题也好回滚。
-- **二次分发 / 二创**：本仓库是 **MIT**，允许改、允许再发、允许商用，**保留 `LICENSE` 里的版权行和 MIT 正文**即可；
-  提一句"基于 dsh-bili-scroll 改的"就更好了。第三方代码与署名见 [NOTICE.md](NOTICE.md)。
-- **演示视频**：<https://www.bilibili.com/video/BV1d8pU6xEZX/>
+```json
+{
+  "bvid": "BVxxxxxxxxxx",
+  "cid": 123456,
+  "status": "available",
+  "source": "platform_manual",
+  "language": "zh-CN",
+  "segments": [{"start": 1.2, "end": 3.4, "text": "课程原文"}],
+  "reason": null
+}
+```
 
-*反馈请不要去打扰素材作者（上善 / ZipZipPipe 等），他们只管角色形象，不管这个插件。*
+无字幕记为 `missing`；接口失败记为 `unavailable`，附可读原因。`bili_library/transcription.py` 只定义未来云端转写接口；第一阶段即使自行放入密钥，也不会开始上传或转写。
+
+## 截图与补帧
+
+```sh
+node tools/library.mjs frames BVxxxxxxxxxx_CID
+node tools/library.mjs frames BVxxxxxxxxxx_CID --export /你的目录/frames
+node tools/library.mjs frames-add BVxxxxxxxxxx_CID --at 00:01:23 --at 100.5
+node tools/library.mjs frames-add BVxxxxxxxxxx_CID --from 00:02:00 --to 00:03:00 --every 10
+```
+
+初始最多 20 张，每次补帧最多 20 张，时间点必须小于视频时长。索引同时记录 `requested` 和解码帧的实际 `timestamp`，不是把请求时间伪装成实际时间。重复请求相同时间复用图片；区间包含起点以及落在间隔上的终点。
+
+CLI 可以导出实际 JPEG 文件，管理网页可直接查看和保存截图。第二阶段远程 MCP 将返回实际图片内容，而非要求客户端访问服务器路径。
+
+## 导出收藏夹标题和链接
+
+收藏夹 ID 是网页地址的 `fid`，例如 `https://space.bilibili.com/123/favlist?fid=456` 中的 `456`。登录后也可以列出自己的收藏夹：
+
+```sh
+node tools/library.mjs favorites folders
+# 公开收藏夹也可以指定所有者 UID，不一定需要登录
+node tools/library.mjs favorites folders --uid 123
+
+node tools/library.mjs favorites export 456
+node tools/library.mjs favorites export 'https://space.bilibili.com/123/favlist?fid=456'
+node tools/library.mjs favorites export 456 --format csv --out /你的目录/收藏夹.csv
+node tools/library.mjs favorites export 456 --format markdown --out /你的目录/收藏夹.md
+```
+
+逐页读取并按资源身份去重，输出标题、BV、规范视频链接及条目状态。影视／番剧条目保留接口给出的播放链接，标记 `download_supported: false`；失效和未知条目保留状态，不编造 BV 或链接；私有收藏夹需要所属账号有效凭证。接口错误或分页异常直接失败，不悄悄导出截断列表。最多 1000 页、300 秒；导出时收藏夹被修改仍可能造成列表变化，结果不是事务快照。
+
+默认保存到 `exports/favorites-ID.json`，已有文件不覆盖，重复导出请指定新的 `--out`。CSV 防止标题触发电子表格公式，Markdown 转义标题。**CLI 导出不会提交下载任务或修改收藏状态。网页中可显式勾选条目加入下载队列，或经单独预览和确认执行 B站移动/删除。**
+
+## 资源限制与网络策略
+
+修改资料库 `config.json` 后新任务生效：
+
+| 字段 | 默认值 |
+|---|---:|
+| `max_duration_seconds` | 3600 |
+| `max_download_bytes` | 1073741824（音视频合计 1 GiB） |
+| `task_timeout_seconds` | 1800 |
+| `quota_bytes` | 10737418240（整个资料库含环境、临时文件） |
+| `min_free_bytes` | 2147483648 |
+| `initial_frames` / `max_extra_frames` | 20 / 20 |
+| `download_rate_bytes` | 2097152 |
+
+跨进程锁保证 worker、补帧和收藏夹导出不会并行执行。下载前检查预计体积与合并空间，下载期间检查实际字节和磁盘，worker 监控超时、取消及磁盘配额，终止整组子进程。不会自动删除已有资料。
+
+只接受预期 B站 HTTPS 视频地址；所有 API、短链跳转和媒体请求都限制在 B站及指定 CDN 域名。连接前检查全部 DNS 结果并固定实际连接 IP，拒绝内网、回环、链路本地等地址。yt-dlp 经过任务内部的短期、带随机认证的回环 CONNECT 代理，以应用同一策略；该代理不提供资料 API、不监听公网。FFmpeg 只读本地媒体。
+
+不继承 `HTTP_PROXY`、`HTTPS_PROXY` 等应用代理变量，避免绕过目标检查；系统 VPN 的正常路由不修改。仅能通过本地 HTTP/SOCKS 代理上网的配置当前不支持，会明确失败。
+
+## 测试
+
+```sh
+python3 -m unittest discover -s tests -v
+node selfcheck.mjs
+# 有 FFmpeg/ffprobe 和 yt-dlp 的环境运行全部真实媒体测试
+BILI_FFMPEG=/路径/ffmpeg BILI_FFPROBE=/路径/ffprobe \
+  /你的Python环境/bin/python -m unittest discover -s tests -v
+```
+
+离线测试涵盖分P、缓存、任务互斥/取消/超时、字幕来源、收藏夹分页/去重/失效条目、内网及重定向拦截、凭证隔离和导出转义。真实媒体测试生成本地样本并验证 ffprobe、实际截图时间和重复归档缓存；不会下载陌生视频。
+
+原项目来源、许可证与署名保留在 `LICENSE`、`NOTICE.md` 和 `CONTRIBUTORS.md`。
+
+
+## 网页后台使用
+
+初始化环境后运行：
+
+```sh
+node tools/library.mjs web
+# 或 npm run web
+```
+
+浏览器打开 `http://127.0.0.1:8765`。首次启动生成独立后台令牌，保存在资料库 `secrets/web-token`；在自己的终端读取并粘贴到登录框：
+
+```sh
+cat "${BILI_LIBRARY_HOME:-${DSH_HOME:-$HOME/.dsh}/bili-duty/library}/secrets/web-token"
+```
+
+后台本身不打印令牌。登录会话有效 8 小时，退出或重启后重新登录。每个资料库只允许运行一个网页后台。Ctrl+C 停止前台运行的网页；它只会请求取消自己启动的下载 worker，不会停止另一个终端启动的 CLI worker。
+
+- **视频资料库**：提交链接、手动处理队列、搜索、下载原视频、查看字幕及实际截图、按时间点/区间补帧。
+- **下载任务**：查看阶段和错误，取消或重新排队；重试后仍需点击处理队列。
+- **回收站**：移除视频时连同字幕和截图一起移入，可恢复；永久删除需要再次确认，之后释放空间。
+- **收藏夹整理**：同步 ID/链接或导入 CLI JSON，搜索、分类筛选、重复收藏筛选、批量标签与备注、关键词分类预览、导出 JSON/CSV/Markdown。同步不会覆盖已有本地标注。只下载你勾选并确认加入队列的普通 BV 视频，每个默认 P1。
+- **设置与配置**：修改资源限制和本地分类关键词规则，上传 B站凭证 JSON，检查工具及磁盘状态。没有模型 API 的伪配置项。
+
+本地移除与远程取消收藏是两个独立动作。JSON/CSV 导出包含分类、标签、备注；Markdown 用于阅读标题和链接。网页导出按所选收藏夹和分类筛选，搜索关键词不限制导出范围。
+
+### B站账号上的移动 / 删除
+
+默认关闭，启动前显式启用：
+
+```sh
+BILI_REMOTE_WRITES=1 node tools/library.mjs web
+```
+
+1. 在设置页上传有效的 `bili_credential.json`，或者复用 DSH 的扫码登录凭证。
+2. 同步源收藏夹，在列表中勾选视频，点击“移动 / 删除 B站收藏”。
+3. 读取当前账号自己的收藏夹。移动时选择另一个已有收藏夹；新建收藏夹请先在 B站完成。
+4. 生成预览：后台验证当前登录账号、源/目标归属、条目是否仍存在，并保存修改前的清单。
+5. 核对具体标题及目标，输入提示的确认文字，如“移动3条”，再点击执行。
+6. 后台执行一次请求后，重新读取源/目标列表复核；只有核对通过的条目才记为成功。结果不确定或部分未确认时不自动重试，先在 B站或同步结果中检查。
+
+一次最多 50 条普通 BV 视频，只能操作自己的收藏夹；影视/番剧条目暂不支持远程写操作。操作预览 10 分钟有效、只可执行一次。修改前清单保存在 `exports/before-remote-预览ID.json`，用于人工核对，它不是自动回滚机制。删除表示从源收藏夹取消收藏，不删除 UP 主视频，也不删除本地归档。
+
+远程写操作依据社区维护的 [B站收藏夹接口资料](https://github.com/bilibili-plugins/bilibili-api-collect/blob/master/docs/fav/action.md)适配；接口变化或风控可能导致失败。实现通过模拟接口测试覆盖归属、确认、单次执行、结果复核和不确定状态；开发验收没有对真实账号执行移动/删除。
+
+## 完整配置方案
+
+### 一、本机独立使用（macOS / Linux）
+
+不需要先启动 DSH。在项目目录执行，FFmpeg/ffprobe 路径替换为自己的工具：
+
+```sh
+export BILI_LIBRARY_HOME="$HOME/.dsh/bili-duty/library"
+export BILI_FFMPEG=/绝对路径/ffmpeg
+export BILI_FFPROBE=/绝对路径/ffprobe
+node tools/library.mjs setup
+node tools/library.mjs doctor
+node tools/library.mjs web
+```
+
+默认 Python 环境在数据目录 `.venv/`，uv 管理的 Python 下载与缓存也放进数据目录。`setup` 只安装 Python 和 yt-dlp，不自动安装 FFmpeg，不安装 Whisper。
+
+### 二、复用 DSH 登录
+
+默认数据目录下，网页和 CLI 会优先读取 `library/secrets/bilibili.json`，没有时读取其父目录的 `bili_credential.json`。DSH 仍可负责扫码登录，资料库后台独立运行。
+
+如果自定义了资料库位置，用 CLI `credentials-import` 或网页上传 JSON，避免把凭证复制到源码目录。主依赖环境、资料库环境、原本地 Whisper 环境彼此独立；资料库不会自动调用 Whisper。
+
+### 三、固定启动环境文件
+
+仓库提供 `tools/library.env.example`。复制到仓库根目录的 `library.env`（已忽略，不提交 Git），编辑为本机路径：
+
+```sh
+cp tools/library.env.example library.env
+chmod 600 library.env
+# 编辑后载入，启动；新终端需要重新载入
+set -a
+. ./library.env
+set +a
+node tools/library.mjs web
+```
+
+只载入自己维护的配置文件。启动器不会自动读取 `.env`，这样不会意外执行陌生文件里的内容。
+
+| 环境变量 | 默认 / 用途 | 生效方式 |
+|---|---|---|
+| `BILI_LIBRARY_HOME` | 覆盖资料库目录 | 启动前设置 |
+| `DSH_HOME` | 未指定资料库目录时，取其 `bili-duty/library` 子目录 | 启动前设置 |
+| `BILI_LIBRARY_PYTHON` | 覆盖 CLI/网页解释器；默认资料库 `.venv`，再退回 `python3` | 启动前设置 |
+| `BILI_FFMPEG` | FFmpeg 可执行文件绝对路径，默认 PATH | 重启后台 |
+| `BILI_FFPROBE` | ffprobe 可执行文件绝对路径，默认 PATH | 重启后台 |
+| `BILI_WEB_PORT` | 网页端口，默认 `8765` | 重启后台；`web --port` 优先 |
+| `BILI_WEB_TOKEN` | 可选，至少24字符；优先于令牌文件 | 重启后台；空字符串不合法 |
+| `BILI_REMOTE_WRITES` | 仅精确值 `1` 启用 B站收藏夹移动/删除，默认关闭 | 重启后台 |
+
+没有 `BILI_WEB_HOST` 开放监听项：当前只绑定 `127.0.0.1`。IPv6 地址、局域网 IP、HTTPS 反向代理域名不在当前 Host/Origin 白名单中。不要把它直接作为公网服务发布。
+
+### 四、Linux 服务器 + Mac 远程访问
+
+服务器安装环境并保持回环监听：
+
+```sh
+# 服务器项目目录内；数据目录需归当前运行用户所有
+export BILI_LIBRARY_HOME=/srv/bili-library
+export BILI_FFMPEG=/usr/bin/ffmpeg
+export BILI_FFPROBE=/usr/bin/ffprobe
+node tools/library.mjs setup
+node tools/library.mjs web --port 8765
+```
+
+Mac 上建立 SSH 隧道，浏览器仍使用匹配白名单的相同端口：
+
+```sh
+ssh -N -L 8765:127.0.0.1:8765 用户名@服务器
+```
+
+然后打开 `http://127.0.0.1:8765`，使用服务器数据目录中的后台令牌登录。服务器防火墙无需放行 8765；如果本机端口占用，请让服务端端口及隧道本地端口一起改为同一值，例如 8877。
+
+1核1GB机器建议：不运行本地 ASR，保持单任务，初始截图 8～12 张，下载限速 524288 字节/秒。网页无需 Node 前端构建或 npm 依赖，运行时使用 Python 标准库 HTTP 服务和原 SQLite；Node 只负责启动引导。
+
+### 五、资源配置完整示例
+
+资料库 `config.json`，或者直接在网页设置页修改。下例偏向低资源机器：
+
+```json
+{
+  "max_duration_seconds": 3600,
+  "max_download_bytes": 536870912,
+  "task_timeout_seconds": 1800,
+  "quota_bytes": 10737418240,
+  "min_free_bytes": 2147483648,
+  "initial_frames": 10,
+  "max_extra_frames": 20,
+  "download_rate_bytes": 524288
+}
+```
+
+数值均为整数；时间用秒、大小用字节，截图计数 1～20。网页改动在后台空闲时保存，新操作读取新配置；设置页保存时若下载器持锁，会提示等待。修改工具路径、端口、后台令牌和远程写开关需重启，资源限制和分类规则不需重启。
+
+磁盘统计包括环境、缓存、导出及回收站。移入回收站不会释放空间，永久删除才释放；超出配额时先清理回收站或调整配额。不自动删除资料。
+
+### 六、本地分类规则
+
+规则存放在资料库 `organize-rules.json`。第一次未保存时使用内置规则，网页设置页可编辑：
+
+```json
+[
+  {"category":"线性代数","keywords":["矩阵","线性代数","特征值"]},
+  {"category":"计算机基础","keywords":["408","数据结构","计组","计网"]},
+  {"category":"AI 工具","keywords":["DeepSeek","Codex","DSH"]}
+]
+```
+
+按顺序、不区分英文大小写匹配标题，第一条命中生效。没有命中的保持未分类；已有分类始终保留。单独编辑或批量编辑可以清空/修改分类、标签、备注。此功能不调用模型，也不根据推测的内容修改 B站收藏夹。
+
+### 七、凭证、后台令牌与未来模型密钥
+
+| 文件 | 内容 | 当前是否使用 |
+|---|---|---|
+| `secrets/web-token` | 网页登录令牌 | 使用；若设置 `BILI_WEB_TOKEN` 则以环境值为准 |
+| `secrets/bilibili.json` | B站扫码登录四字段 | 字幕、私有收藏夹、本人收藏夹修改使用 |
+| 父目录 `bili_credential.json` | 原 DSH 登录凭证 | 没有上述独立 B站凭证时复用 |
+| `secrets/models.json` | 未来云端模型密钥预留 | 不创建、不读取，不会因放入文件而自动启用 |
+
+后台上传凭证仅保存，不回显；访问令牌不要填成 B站 Cookie。轮换后台令牌时停止服务，在私有环境设置新的随机 `BILI_WEB_TOKEN` 后重启，旧会话随重启失效；也可以停服后在本机替换 `secrets/web-token` 内容并保持0600权限。任何令牌都不要放进网页 URL、Git、公开截图或命令日志。
+
+### 八、保持运行与备份
+
+前台启动是默认方案，关闭终端/Ctrl+C 后网页停止。长期运行可由现有进程管理器管理：工作目录设为本仓库，执行 `node tools/library.mjs web`，以普通用户运行，环境变量使用上述方案，不需要管理员权限。进程管理器只维持网页服务，不会自动开始下载队列或扫描收藏夹。
+
+为避免自动重启打断远程操作，远程修改执行期间不要重启服务。中断中的远程计划会记为结果不确定，必须先同步核对，不能直接再次执行同一预览。
+
+备份时停止网页和 CLI worker，再复制整个数据目录；恢复时使用独立目录，设置 `BILI_LIBRARY_HOME` 指向它。不要在 SQLite 或视频正在写入时直接复制。备份含账号凭证，应保存在私有位置。跨机器迁移后检查 Python 环境和媒体工具路径；虚拟环境不能保证跨平台搬迁可用，必要时在新机器重新 `setup`。
+
+### 九、常见问题
+
+- **登录后仍无字幕**：凭证可能过期，或视频本身无字幕。重新登录后单独刷新字幕；当前不进行云端转写。
+- **后台说已有任务在运行**：网页与 CLI 共用跨进程锁，等待当前操作结束，或取消相应下载任务。
+- **移动/删除按钮无法执行**：检查 `BILI_REMOTE_WRITES=1`、有效 CSRF 凭证、源/目标均属于自己、仅选普通 BV 视频且不超过50条。
+- **远程结果不确定**：可能网络在写请求之后断开；先同步源、目标核对，已保存修改前清单，不自动重试。
+- **首次开网页看不到验收资料**：验收在 `/tmp/bili-library-acceptance`；正式默认目录是独立资料库。可以导入导出的 JSON，或显式选择原数据目录。临时目录可能被系统清理。
+- **视频没有在线播放**：当前提供原文件下载；MKV 等封装不保证浏览器播放，不额外转码消耗 CPU。
+- **代理网络无法访问**：程序不使用应用 HTTP/SOCKS 代理变量；系统 VPN/TUN 路由不变。不能通过关闭公网 IP 检查来绕过这一限制。
+- **Windows**：本版本尚未适配 POSIX 进程锁和进程组，使用 macOS 或 Linux。
+
+### 十、可选后台常驻模板（不自动安装）
+
+仓库 `deploy/` 提供两份模板，均需要你替换绝对路径；当前开发没有替你启用登录启动或系统服务。
+
+**Linux 用户级 systemd**：模板 `deploy/bili-library.service.example`。先确认 `node` 的实际绝对路径，再替换 `WorkingDirectory`、`ExecStart`、`EnvironmentFile`。环境文件按 `KEY=value` 写，使用绝对路径，不能依赖 `$HOME` 等 shell 展开。令牌保留在资料库私有文件，不需要写进 unit。初始化资料库和环境后，将修改后的 unit 保存到 `~/.config/systemd/user/bili-library.service`：
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now bili-library.service
+systemctl --user status bili-library.service
+# 停止并取消自动启动
+systemctl --user disable --now bili-library.service
+```
+
+是否在退出登录后继续运行取决于服务器现有用户管理设置；当前不修改 linger 等系统策略。此模板只维护网页进程，不会自动启动下载或整理任务。
+
+**macOS LaunchAgent**：模板 `deploy/personal.bili-library.plist.example`。替换 `__NODE_BIN__`、`__PROJECT_DIR__`、`__DATA_DIR__`、`__FFMPEG__`、`__FFPROBE__`，保证资料库已初始化；保存为 `~/Library/LaunchAgents/personal.bili-library.plist` 后：
+
+```sh
+launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/personal.bili-library.plist"
+# 停止并取消本次登录会话内的加载
+launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/personal.bili-library.plist"
+```
+
+删除该 plist 可取消以后登录时的自动加载。不要同时用前台、LaunchAgent 和其他进程管理器运行同一个资料库，跨进程锁会拒绝重复后台。
+
+本地整理的 JSON 导出可再次导入，保留分组及标签、备注；导入整理结果按合并处理，不会因为只导出某个分类就隐藏原有其他条目。原 CLI 全量收藏夹快照的导入/同步仍按该收藏夹完整清单更新。

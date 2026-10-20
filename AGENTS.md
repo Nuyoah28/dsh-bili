@@ -1,3 +1,23 @@
+# 当前 fork：本地 B站资料库
+
+用户已将本仓库改为个人本地资料库，以下是当前开发方向，优先于下方保留的上游历史说明。
+
+- 第一阶段核心为 `bili_library/` 与 `tools/library.mjs`；CLI 独立于 DSH。
+- 默认数据目录 `$DSH_HOME/bili-duty/library/`，支持 `BILI_LIBRARY_HOME`，数据不写插件包。
+- 只按用户给出的单分P归档；收藏夹可导出、在本地分类，不自动下载。
+- 新增本机网页后台 `bili_library/webserver.py`、静态资源 `bili_library/web/`；使用令牌登录、CSRF、Host/Origin 检查。
+- 用户已要求远程整理收藏夹：仅启用 `BILI_REMOTE_WRITES=1` 时可经预览与确认移动/删除本人收藏夹条目，禁止自动执行或自动重试不确定结果。
+- 网页本地删除先进入回收站；永久删除由用户明确点击确认。
+- 不恢复定时推荐、值班、自动评论、私信或收藏；旧配置不得重新启用这些行为。
+- 保留 DSH 扫码登录、主依赖安装及只读工具；Whisper 代码仅保留为可选扩展，不自动安装或运行。
+- 资料库独立依赖使用 uv 自动引导；FFmpeg/ffprobe 支持 PATH 或 `BILI_FFMPEG` / `BILI_FFPROBE`。
+- 视频身份为 BV＋CID，真实字幕必须保留起止时间，弹幕不能当字幕。
+- 任务串行，网络必须走域名/IP 固定检查；不要绕过网络检查来适配代理。
+- 测试：`python3 -m unittest discover -s tests -v`、`node selfcheck.mjs`；真实媒体测试需 FFmpeg/ffprobe。
+- 远程 MCP 和模型总结属于后续阶段；网页仅监听回环，远程访问用 SSH 隧道，不开放公网服务。
+
+---
+
 # 给 AI 助手看的（本仓库 = 一个 DSH 插件）
 
 `dsh-bili-scroll`（中文名「**刷B站**」）：每天替用户刷一轮 B 站 —— 搜、**读字幕原文**判断、写一份日报，特别值得的会发一条评论 **@ 用户**。

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>personal.bili-library</string>
+  <key>ProgramArguments</key><array>
+    <string>__NODE_BIN__</string><string>__PROJECT_DIR__/tools/library.mjs</string><string>web</string>
+  </array>
+  <key>WorkingDirectory</key><string>__PROJECT_DIR__</string>
+  <key>EnvironmentVariables</key><dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>BILI_LIBRARY_HOME</key><string>__DATA_DIR__</string>
+    <key>BILI_FFMPEG</key><string>__FFMPEG__</string>
+    <key>BILI_FFPROBE</key><string>__FFPROBE__</string>
+    <key>BILI_WEB_PORT</key><string>8765</string>
+    <key>BILI_REMOTE_WRITES</key><string>0</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>__DATA_DIR__/web-stdout.log</string>
+  <key>StandardErrorPath</key><string>__DATA_DIR__/web-stderr.log</string>
+</dict></plist>

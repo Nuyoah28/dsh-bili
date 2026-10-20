@@ -45,49 +45,7 @@ export const inject = ['webServer', 'tools', 'settings']
 // ⚠️ schemastery 彻底拿不到时，这里会是 undefined —— **插件照常加载**，只是设置页降级
 //    （宁可少一个设置页，也不能因为一个 import 让整条插件不激活 ✗）
 export const Config = !z ? undefined : z.object({
-  /** 定量刷：每天最多挑几条 */
-  perDay: z.natural().default(5).extra('volatile', true),
-  /** 峰谷自动刷（总开关） */
-  peakValley: z.boolean().default(false).extra('volatile', true),
-  /** 峰谷子开关：中午 / 晚上 */
-  noon: z.boolean().default(true).extra('volatile', true),
-  night: z.boolean().default(true).extra('volatile', true),
-  /** 自动评论 @ 使用者（默认关 —— 会拿用户的号说话，必须他自己开） */
-  autoComment: z.boolean().default(false).extra('volatile', true),
-  /** ⭐ 私信投递：off=只发评论（现状）· only=只私信（完全不公开评论）· both=评论 + 私信 */
-  dmMode: z.string().default('off').extra('volatile', true),
-  /** ⭐ 私信发给谁的 UID（数字）。要在 dmMode 不是 off 时填 */
-  dmUid: z.natural().default(0).extra('volatile', true),
-  /** 本地转写（没字幕的视频用 Whisper 转；默认关，要下模型） */
-  transcribe: z.boolean().default(false).extra('volatile', true),
-  /** 本地转写用哪个 Whisper 模型（tiny / base / small / medium） */
-  asrModel: z.string().default('small').extra('volatile', true),
-  /** ⭐ 每轮最多发几条评论（每条里 @ 一次下面那个人）；**有效范围 0–20，口径见 clampPatch**（0 = 不发评论）
-   *  ⚠️ 这里故意**不加 `.max(20)`**：schema 校验不过 ⇒ cordis 拒收这条 entry ⇒ **整条插件不激活** ✗
-   *     （跟 schemastery 拿不到时的降级同一个道理）—— 范围一律由 clampPatch 在**写**和**读**两头钳。 */
-  commentPerRound: z.natural().default(1).extra('volatile', true),
-  /** ⭐ 要 @ 谁（B站 昵称）；**留空 = 不发评论** —— 评论存在的意义就是 @ 那一下 */
-  mentionName: z.string().default('').extra('volatile', true),
-  /** 关注关键词（空了用章程里默认那几组） */
-  keywords: z.array(z.string()).default([]).extra('volatile', true),
-  /** Python：指向 venv 里的那个最好 */
   pythonPath: z.string().default('python').extra('volatile', true),
-  /** dsh 的 bin.js（不填就试自动探测，再退化成 shell 里的 dsh） */
-  dshBin: z.string().default('').extra('volatile', true),
-  /** headless 那一轮用哪个 profile */
-  headlessProfile: z.string().default('headless').extra('volatile', true),
-  /** 给那一轮叠一份插件自己的 patch（把 B站 MCP 挂上）—— 用户 profile 一个字都不用改 */
-  overlayMcp: z.boolean().default(true).extra('volatile', true),
-  /** 跑 headless 时的工作目录 */
-  workspace: z.string().default('').extra('volatile', true),
-  /** 日报形态：full=完整（现状）· brief=每条一两行 · off=不写报告（只发评论） */
-  reportLevel: z.string().default('full').extra('volatile', true),
-  /** 回复评论：默认关。开了之后只回「直接回复到它那条评论下面的人」 */
-  replyToComments: z.boolean().default(false).extra('volatile', true),
-  /** 每轮最多回几条 */
-  replyPerRound: z.number().default(1).extra('volatile', true),
-  /** 自动收藏：0 = 不收藏；>0 = 目标收藏夹 fid（设置页下拉选）。动作在宿主侧完成，模型拿不到这只手 */
-  favFolderId: z.number().default(0).extra('volatile', true),
 })
 
 /**
@@ -326,7 +284,10 @@ export function apply(ctx, config) {
       lastDiffSig = sig
       log(`这些键以插件面板为准（DSH 原生设置里那份不一样）：${sig}`)
     }
-    return clampPatch(out)
+    // Local-library fork: legacy saved/host configuration cannot reactivate autonomous actions.
+    return clampPatch({ ...out, peakValley: false, noon: false, night: false,
+      autoComment: false, dmMode: 'off', dmUid: 0, replyToComments: false,
+      favFolderId: 0, transcribe: false })
   }
   const cfg = loadCfg()
   // ⭐ 配置是"随时可能被设置页就地改掉"的东西 ⇒ 每个入口用之前重算一遍（cfg 这个对象要一直指向同一份）
@@ -423,6 +384,9 @@ export function apply(ctx, config) {
   }
 
   const call = async (toolName, args, opts) => {
+    if (!['bili_check_credential', 'bili_search', 'bili_subtitle', 'bili_comments', 'bili_video_info'].includes(toolName)) {
+      return { ok: false, blocked: true, error: '资料库版本只允许读取视频资料，不提供账号互动' }
+    }
     const client = await ensureMcp()
     return client.call(toolName, args, opts)
   }
@@ -448,11 +412,13 @@ export function apply(ctx, config) {
     try { return JSON.parse(JSON.stringify(v)) } catch { return String(v) }
   }
 
-  const tool = (spec) => ctx.tools.register(defineTool({
+  const tool = (spec) => {
+    return ctx.tools.register(defineTool({
     ...spec,
     output: textOutput,
     async execute(args, exec) { return safe(await spec.execute(args, exec)) },
   }))
+  }
 
   tool({
     name: 'bili_whoami',
@@ -470,7 +436,7 @@ export function apply(ctx, config) {
   tool({
     name: 'bili_search',
     description: '搜 B站 视频（可排序）。返回标题 / BV号 / 播放量 / UP / 时长 等。\n'
-      + '⚠️ 刷一轮的用法：搜近 7 天的、按播放或最新都行，然后**读字幕原文**再判断（别看摘要下结论）。',
+      + '只在使用者明确要求搜索时调用；资料库不会自行推荐或下载搜索结果。',
     parameters: {
       keyword: { type: 'string', description: '搜索关键词' },
       num: { type: 'number', description: '返回几条（默认 10，最大 50）' },
@@ -487,8 +453,7 @@ export function apply(ctx, config) {
 
   tool({
     name: 'bili_subtitle',
-    description: '取一个视频的字幕（AI 字幕）全文。**判断内容就靠它** —— 没有字幕时，'
-      + '若设置里开了「本地转写」再想别的办法，否则直接跳过这条。',
+    description: '读取视频 P1 的平台字幕全文。指定分P、带时间戳字幕及归档请使用资料库 CLI。没有字幕时不得编造。',
     parameters: { bvid: { type: 'string', description: 'BV号' } },
     async execute(args) { return call('bili_subtitle', { bvid: String(args.bvid ?? '') }) },
   })
@@ -502,37 +467,6 @@ export function apply(ctx, config) {
     },
     async execute(args) {
       return call('bili_comments', { bvid: String(args.bvid ?? ''), num: Math.max(1, Number(args.num) || 30) })
-    },
-  })
-
-  tool({
-    name: 'bili_reply',
-    description: '在视频下发评论（或回复某条评论）。这就是"@ 本人"那一下：短、干净、纯文本 @ 写在正文里。\n'
-      + '🔴 安全闸：设置页的「自动评论并 @ 你」**默认是关的**；关着的时候这个工具会拒绝 —— '
-      + '除非本人当场让你发（那时传 force: true）。',
-    parameters: {
-      bvid: { type: 'string', description: 'BV号' },
-      text: { type: 'string', description: '评论正文（短、干净、纯文本 @；别写敏感词）' },
-      rpid: { type: 'number', description: '要回复的评论 id（0/不填 = 发新评论）' },
-      force: { type: 'boolean', description: '本人当场让你发的，传 true 越过"自动评论关着"的闸' },
-    },
-    async execute(args) {
-      // dmMode==='only' 时本轮根本不该发公开评论 —— 在工具层也一并挡掉（除非当场 force）
-      const commentOn = Boolean(cfg.autoComment && cfg.mentionName && cfg.dmMode !== 'only')
-      if (!commentOn && !args.force) {
-        return {
-          ok: false,
-          blocked: true,
-          hint: cfg.dmMode === 'only'
-            ? '现在是「只私信」模式（dmMode=only）—— 规定不发公开评论，改成用 bili_send_message 私信。确实要发时传 force: true。'
-            : '要发评论得同时满足两条：设置里开着「自动评论并 @ 你」、并且填了「要 @ 谁」。或者本人当场让你发时传 force: true。',
-        }
-      }
-      return call('bili_reply', {
-        bvid: String(args.bvid ?? ''),
-        text: String(args.text ?? ''),
-        rpid: Number(args.rpid) || 0,
-      })
     },
   })
 
@@ -567,14 +501,6 @@ export function apply(ctx, config) {
         report: join(outDir, `${dayKey(now)}.md`),
       }
     },
-  })
-
-  tool({
-    name: 'bili_run',
-    description: '**立刻跑一轮**（不等窗口）：起一个 headless 会话，把 duty.md 交给它去刷、写报告。'
-      + '适合"我现在就想看一份"的场合。',
-    parameters: {},
-    async execute() { const r = runDuty('manual'); return { ok: true, ...r } },
   })
 
   tool({
@@ -620,7 +546,7 @@ export function apply(ctx, config) {
   tool({
     name: 'bili_config',
     description: '读 / 改「刷B站」的设置。不给 `patch` 就是读；给了就改（只认 schema 里的字段）。\n'
-      + '例：`{"perDay":5,"peakValley":true,"noon":true,"night":true,"autoComment":false,"transcribe":false,"keywords":["DeepSeek Harness"]}`；'
+      + '例：`{"pythonPath":"/你的环境/bin/python"}`；资料库版本强制关闭定时、评论、私信、收藏及自动转写；'
       + '私信投递：`{"dmMode":"only","dmUid":12345678}`（dmMode = off / only / both）。',
     parameters: { patch: { type: 'object', additionalProperties: true, description: '要改的字段（可省）' } },
     async execute(args) {
@@ -1050,124 +976,7 @@ export function apply(ctx, config) {
     } catch (e) { log(`补占位报告失败：${e?.message ?? e}`) }
   }
 
-  const runDuty = (why = 'window') => {
-   try {
-    refreshCfg()          // ⭐ 设置页刚改过的值要立刻生效（config 是就地改的，快照会过期）
-    const dsh = resolveDsh()
-    // ⭐ 找不到 dsh 就别硬跑：以前会退化成裸 `dsh` ⇒ spawn 失败、只留 exit 1 + 一串乱码 ✗
-    if (dsh.missing) {
-      const msg = '这一轮没跑：找不到 dsh。' + dsh.hint
-      log(msg)
-      try { stubReportIfMissing(1) } catch { /* 补不上也不影响这句话已经进日志 */ }
-      return { started: false, why, error: msg }
-    }
-    const overlay = ensureOverlay()
-    const args = [...dsh.args, '--profile', cfg.headlessProfile || 'headless']
-    if (overlay) args.push('--patch', overlay)
-    args.push(promptFor())
-    // ⭐ 这一轮的工作目录 = 使用者（或别的用户）的**工作区** —— 只有这样它的 `AGENTS.md` 才会自动加载。
-    // ⭐ 工作目录 = **插件家**：那一轮**被沙箱关着**，只写得了自己工作目录里的东西 ✗
-    //    （2026-10-14 教训：为了让它读工作区里的 AGENTS.md 把 cwd 改成工作区 ⇒
-    //      它写不了家目录里的 out/ 报告、整轮卡在"我是被沙箱关着的"上面打转 ✗；
-    //      现在改成"设定由插件读进来、内联进提示词" ✓，cwd 回到插件家 ✓）
-    const cwd = stateDir
-    log(`刷B站开跑（${why}）：${dsh.command} ${args.slice(0, 3).join(' ')} …  cwd=${cwd}`)
-    const child = spawn(dsh.command, args, {
-      cwd,
-      shell: dsh.shell,
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      // ⭐ PYTHONUTF8 / PYTHONIOENCODING：Windows 上 Python 默认按 GBK 编解码，
-      //    中文 / emoji 打进管道会炸（用户反馈过 UnicodeDecodeError），一律按 UTF-8 来
-      // ⭐ ELECTRON_RUN_AS_NODE：**桌面版（Electron）里 spawn 出去的 node 必须带这个**，
-      //    否则它当成"再开一个 Electron 应用"、什么都不干就以 0 退出（issue #5：0.17 秒、code 0、什么都没做）
-      env: uvEnv({ BILI_DUTY_HOME: stateDir, ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}) }),
-    })
-    // ⚠️ 2026-10-16 issue #1（用户 `miaoxingyunduo` 贴了崩溃日志）：`duty.log` 被别的进程占着时
-    //    (`EBUSY`) `appendFileSync` 会抛异常 —— 而这里是 **stream 的 data 回调**，没人接
-    //    ⇒ **未捕获异常 ⇒ 整个 DSH 宿主被杀**（所有会话一起没）。跟 10-14 定时器那次是同一类 ✗
-    //    ⇒ ⭐ 规矩：**插件里任何写日志/写文件的地方都包好 try/catch**，再错也只该"这一轮没跑成" ✓
-    // ⚠️ 2026-10-19 用户贴来的 duty.log 里有 `'dsh' 不是内部或外部命令` 的乱码 ✗ ——
-    //    cmd.exe 自己吐的错误信息是 **GBK**，我们按 UTF-8 写进日志就成了方块 ⇒ 用户看不懂
-    //    ⇒ 先按 UTF-8 解；出现替换符（\uFFFD）就回退 GBK ✓
-    const toText = (buf) => {
-      try {
-        const b = Buffer.isBuffer(buf) ? buf : Buffer.from(String(buf))
-        const u = b.toString('utf8')
-        if (!u.includes('\uFFFD')) return u
-        try { return new TextDecoder('gbk').decode(b) } catch { return u }
-      } catch { return String(buf) }
-    }
-    const pick = (buf) => {
-      try { appendFileSync(logFile, toText(buf), 'utf8') } catch { /* 写不进去就丢，绝不能抛 */ }
-    }
-    child.stdout?.on('data', pick)
-    child.stderr?.on('data', pick)
-    child.on('exit', (code) => {
-      log(`刷B站结束（${why}，code=${code}）`)
-      stubReportIfMissing(code)   // ⭐ 没写报告就补一份占位 —— 别让使用者什么都看不到
-    // ⭐ 2026-10-20：这一轮跑成了、并且使用者选了收藏夹 ⇒ 把挑中的存进去（后台做，别拖住收尾）
-    if (code === 0 && Number(cfg.favFolderId) > 0) {
-      favToday('auto').catch((error) => log('自动收藏出错（已兜住）：' + String(error?.message ?? error)))
-    }
-      rotateLogIfBig()            // ⭐ 日志别无声地长（三天 797KB ⇒ 一年约 100MB）
-      // ⭐ 这一轮挑了几条：从今天的报告里数（上一轮挑的还在同一份文件里 ⇒ 数出来就是全天的账）
-      try {
-        const st = readJson(dutyStateFile, {})
-        const prev = st.day === dayKey() ? Number(st.picked || 0) : 0
-        const picked = countPickedToday()   // 报告是事实来源、state 只是兜底（跟闸门同一个算法）
-        if (picked > prev) { bumpState({ picked }); log(`今天挑到 ${picked} 条（上限 ${Number(cfg.perDay) || 0} 条）`) }
-      } catch (e) { log(`数挑了几条时出错（不影响这一轮）：${e?.message ?? e}`) }
-      // ⭐ 发完评论之后**过一会儿再核一次**（2026-10-16 加的「评论发出后复核」）：
-      //    接口回"发送成功"≠ 公开可见（新号/风控会进审核）；而"不公开"时连 @ 通知都不会推 ⇒
-      //    插件会以为发了、下一轮不再发 ⇒ 一条都没到人。等 90 秒再查，避免把"还在审核"误判成"没发出去"。
-      const verifyTimer = setTimeout(() => { Promise.resolve(runVerify('round')).catch((e) => log('复核异常：' + (e?.message ?? e))) }, 90_000)
-      verifyTimer.unref?.()   // 别为了一次复核把宿主进程的退出拖住 90 秒
-    })
-    child.on('error', (e) => log(`刷B站起不来：${e?.message ?? e}`))
-    return { started: true, why, profile: cfg.headlessProfile, cwd, log: logFile }
-   } catch (e) {
-    log(`刷B站开跑失败（${why}）：${e?.stack ?? e}`)
-    return { started: false, why, error: String(e?.message ?? e) }
-   }
-  }
-
-  /* ─────────────── 谷时定时器 ───────────────
-   * 🔴 2026-10-14 事故（使用者那边表现为"DSH 突然崩了、网页 Failed to fetch (gateway/internal)"）：
-   *    第一版是 `setInterval(tick, 60_000)`，回调里抛的 TypeError **没人接**，直接把整个宿主进程带走
-   *    （`dsh: fatal uncaught exception`）。⇒ **定时器回调必须自己兜住所有异常**：
-   *    插件再错也只该"这一轮没跑成"，绝不该杀宿主。
-   */
-  const tick = () => {
-    try {
-      refreshCfg()                    // ⭐ 定时器活得比设置页久：每一跳都重新读一遍配置
-      if (!cfg.peakValley) return
-      const now = new Date()
-      const st = readJson(dutyStateFile, {})
-      const today = dayKey(now)
-      // ⭐ 闸门看的是「今天已经**挑到几条**」（从今天的报告里数出来），不是「跑了几轮」
-      if (countPickedToday(now) >= Number(cfg.perDay || 0)) return
-      // ⭐ 「不写日报」那档没有报告可数 ⇒ 数不出条数就保守一点：一天只跑一轮
-      if (String(cfg.reportLevel || 'full') === 'off' && roundsToday(now) >= 1) return
-      for (const k of ['noon', 'night']) {
-        if (!cfg[k]) continue
-        if (!inWindow(now, WINDOWS[k])) continue
-        const key = `${today}:${k}`
-        if (st.windows?.[key]) continue
-        bumpState({ windows: { ...(st.windows || {}), [key]: true }, count: roundsToday(now) + 1, lastRunAt: now.toISOString(), lastWhy: k })
-        runDuty(`window:${k}`)
-        return
-      }
-    } catch (e) {
-      log(`定时器这一跳出错（已兜住，不影响宿主）：${e?.stack ?? e}`)
-    }
-  }
-
-  try {
-    const timer = setInterval(tick, 60_000)
-    timer.unref?.()                                    // 别因为这个定时器让进程不肯退出
-    ctx.effect(() => () => clearInterval(timer), 'bili-duty: 谷时定时器')
-  } catch (e) { log(`定时器没起来：${e?.message ?? e}`) }
+  // This fork deliberately registers no recommendation timer.
 
   /* ─────────────── HTTP（设置页用） ─────────────── */
 
@@ -1574,6 +1383,10 @@ export function apply(ctx, config) {
   const handle = async (req, res, url) => {
     refreshCfg()
     const path = url.pathname
+    if (['/api/bili-duty/run', '/api/bili-duty/fav-today', '/api/bili-duty/verify',
+      '/api/bili-duty/install-asr', '/api/bili-duty/upgrade'].includes(path)) {
+      return sendJson(res, 410, { ok: false, error: '本地资料库版本已移除此功能' })
+    }
     if (req.method === 'GET' && path === '/api/bili-duty/status') return sendJson(res, 200, status())
 
     if (req.method === 'GET' && path === '/api/bili-duty/config') {
@@ -1595,10 +1408,6 @@ export function apply(ctx, config) {
       const { clean, host } = await persistCfg(patch)
       log(`设置已更新：${JSON.stringify(clean)}（DSH 那边${host.ok ? '已同步' : '没写成：' + host.error}）`)
       return sendJson(res, 200, { ok: true, config: cfg, host })
-    }
-
-    if (req.method === 'POST' && path === '/api/bili-duty/run') {
-      return sendJson(res, 200, { ok: true, ...runDuty('manual') })
     }
 
     // 建 venv + 装依赖（**不等它**：几分钟的活，进度写 install.log）

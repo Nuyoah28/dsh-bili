@@ -1,7 +1,7 @@
 {
   "name": "dsh-bili-scroll",
-  "version": "0.1.19",
-  "description": "DSH 插件：每天替你刷一轮 B站 —— 读字幕挑出值得的、写一份日报，值得的就 @ 你",
+  "version": "0.3.0-local.1",
+  "description": "本地 B站视频资料库：按链接归档视频、字幕和截图，导出收藏夹列表",
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -10,9 +10,14 @@
     "mcp",
     "duty"
   ],
-  "repository": { "type": "git", "url": "git+https://github.com/c1overzz/dsh-bili-scroll.git" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/c1overzz/dsh-bili-scroll.git"
+  },
   "homepage": "https://github.com/c1overzz/dsh-bili-scroll#readme",
-  "bugs": { "url": "https://github.com/c1overzz/dsh-bili-scroll/issues" },
+  "bugs": {
+    "url": "https://github.com/c1overzz/dsh-bili-scroll/issues"
+  },
   "license": "MIT",
   "type": "module",
   "main": "index.js",
@@ -33,7 +38,13 @@
     "selfcheck.mjs",
     "LICENSE",
     "NOTICE.md",
-    "CONTRIBUTORS.md"
+    "CONTRIBUTORS.md",
+    "bili_library/*.py",
+    "requirements-library.txt",
+    "tools/library.mjs",
+    "bili_library/web/*",
+    "tools/library.env.example",
+    "deploy/*.example"
   ],
   "engines": {
     "dsh": ">=0.1.7-rc.1",
@@ -70,5 +81,13 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
+  },
+  "bin": {
+    "bili-library": "./tools/library.mjs"
+  },
+  "scripts": {
+    "library": "node tools/library.mjs",
+    "test:library": "python3 -m unittest discover -s tests -v",
+    "web": "node tools/library.mjs web"
   }
 }

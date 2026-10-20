@@ -31,12 +31,13 @@ try {
 }
 
 const registered = []
+let httpRegistration = null
 const fakeCtx = {
   // ⭐ 宿主给的是**函数**（`dshHomePath(...segments)`），这里照样给函数 —— 别用字符串
   get: (k) => (k === 'dshHomePath' ? (...seg) => join(SANDBOX_HOME, ...seg) : undefined),
   logger: { info: () => {}, warn: () => {} },
   tools: { register: (t) => { registered.push(t?.name ?? String(t)); return t } },
-  webServer: { register: () => ({ dispose() {} }) },
+  webServer: { register: (spec) => { httpRegistration = spec; return { dispose() {} } } },
   effect: (fn) => { try { return fn() } catch { return undefined } },
   settings: { register: () => ({}) },
   slots: { inject: () => {}, register: () => ({}) },
@@ -45,11 +46,33 @@ const fakeCtx = {
 try { rmSync(SANDBOX_HOME, { recursive: true, force: true }) } catch { /* 清不掉就留着 */ }
 mkdirSync(SANDBOX_HOME, { recursive: true })
 
+const originalInterval = globalThis.setInterval
+let backgroundTimers = 0
+globalThis.setInterval = (...args) => { backgroundTimers++; return originalInterval(...args) }
 try {
-  mod.apply(fakeCtx, {})
+  mod.apply(fakeCtx, { peakValley: true, autoComment: true, dmMode: 'both', dmUid: 123, replyToComments: true, favFolderId: 456 })
 } catch (e) {
   fail('host 半端 apply() 抛错了 —— 宿主里就是那句 `warning: 1 entry did not activate`', e)
 }
+globalThis.setInterval = originalInterval
+if (backgroundTimers) fail('资料库不应注册自动任务定时器')
+if (registered.some(n => ['bili_reply', 'bili_run', 'bili_send_message'].includes(n))) fail('资料库不应暴露主动推荐或互动工具')
+async function http(path, method = 'GET') {
+  let code, value
+  await httpRegistration.handler({ url: path, method }, {
+    writeHead: (status) => { code = status },
+    end: (body) => { value = JSON.parse(body) },
+  })
+  return { code, value }
+}
+const libraryStatus = await http('/api/bili-duty/status')
+if (libraryStatus.code !== 200) fail('状态接口无法读取')
+const migrated = libraryStatus.value.config
+if (migrated.peakValley || migrated.autoComment || migrated.replyToComments || migrated.favFolderId || migrated.dmMode !== 'off') fail('旧配置重新启用了主动功能')
+for (const path of ['run', 'fav-today', 'verify', 'install-asr', 'upgrade']) {
+  if ((await http('/api/bili-duty/' + path, 'POST')).code !== 410) fail('已移除功能的 HTTP 入口没有封闭：' + path)
+}
+console.log('✓ 无后台定时器；旧主动配置已失效；互动及自动转写入口返回 410')
 console.log(`✓ host 半端 OK：name=${mod.name}  inject=${JSON.stringify(mod.inject)}  工具 ${registered.length} 个`)
 for (const n of registered) console.log(`    - ${n}`)
 

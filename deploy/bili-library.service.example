@@ -1,0 +1,23 @@
+# User service template. Replace every /absolute/path/... before installing.
+[Unit]
+Description=Personal Bilibili Library Admin
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/absolute/path/to/dsh-bili
+ExecStart=/usr/bin/node /absolute/path/to/dsh-bili/tools/library.mjs web
+EnvironmentFile=/absolute/path/to/private/bili-library.env
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=15
+KillMode=mixed
+UMask=0077
+Nice=10
+NoNewPrivileges=true
+# Optional cgroup limit; only enable after checking support and actual media workloads.
+# MemoryMax=600M
+
+[Install]
+WantedBy=default.target

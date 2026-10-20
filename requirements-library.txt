@@ -1,0 +1,2 @@
+# Lightweight archival environment. No Whisper / torch / local model downloads.
+yt-dlp>=2026.3.17,<2027

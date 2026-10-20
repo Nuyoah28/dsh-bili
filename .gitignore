@@ -11,3 +11,15 @@ log/
 
 # 给你本机双击用的脚本（里面有本机绝对路径），不进仓库
 *.cmd
+
+# Local-library runtime / Python artifacts
+__pycache__/
+*.py[cod]
+.venv-library/
+.bili-library/
+bili_credential.json
+cookies.txt
+secrets/
+# Local startup configuration can contain credentials; use the committed example only.
+library.env
+.env

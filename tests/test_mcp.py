@@ -186,6 +186,7 @@ class MCPHTTPTests(unittest.TestCase):
                     resource=ORIGIN+'/mcp',scope='library',state='my-state',code_challenge=challenge('v'*43),code_challenge_method='S256')
         status,page,headers=self.request('/oauth/authorize?'+urlencode(params),method='GET',token=False,headers={'Sec-Fetch-Site':'cross-site'})
         self.assertEqual(status,200);self.assertNotIn(b'<script>',page);self.assertIn(b'&lt;script&gt;',page)
+        self.assertEqual(headers['Referrer-Policy'],'same-origin')
         nonce=re.search(rb'name="nonce" value="([^"]+)"',page)[1].decode()
         cookie=headers['Set-Cookie'].split(';')[0]
         self.assertIn('Secure',headers['Set-Cookie'])
@@ -199,6 +200,27 @@ class MCPHTTPTests(unittest.TestCase):
         self.assertEqual(status,200)
         self.assertEqual(self.rpc('tools/list',headers={'Authorization':'Bearer '+tokens['access_token']})[0],200)
         self.assertEqual(self.request('/oauth/token',req,token=False,form=True)[0],400)
+
+    def test_authorize_navigation_from_external_or_opaque_origin_keeps_consent_strict(self):
+        _,client,_=self.request('/oauth/register',dict(redirect_uris=['http://127.0.0.1:12345/callback']),token=False)
+        params=dict(client_id=client['client_id'],redirect_uri=client['redirect_uris'][0],response_type='code',
+                    resource=ORIGIN+'/mcp',scope='library',state='navigation-state',code_challenge=challenge('v'*43),code_challenge_method='S256')
+        for origin in ('https://external-client.example','null'):
+            status,page,headers=self.request('/oauth/authorize?'+urlencode(params),method='GET',token=False,
+                                            headers={'Origin':origin,'Sec-Fetch-Site':'cross-site','Sec-Fetch-Mode':'navigate'})
+            self.assertEqual(status,200)
+            self.assertEqual(headers['Referrer-Policy'],'same-origin')
+            nonce=re.search(rb'name="nonce" value="([^"]+)"',page)[1].decode()
+            form=dict(nonce=nonce,owner=self.token,approve='yes')
+            cookie=headers['Set-Cookie'].split(';')[0]
+            status,denied,_=self.request('/oauth/consent',form,form=True,headers={'Origin':origin,'Cookie':cookie})
+            self.assertEqual(status,403);self.assertEqual(denied['code'],'mcp_origin_not_allowed')
+            self.assertEqual(self.rpc('tools/list',headers={'Origin':origin})[0],403)
+            # Rejected external POST must not consume the legitimate browser's nonce.
+            status,_,_=self.request('/oauth/consent',form,form=True,headers={'Origin':ORIGIN,'Cookie':cookie})
+            self.assertEqual(status,303)
+        self.assertEqual(self.request('/oauth/authorize?'+urlencode(params),method='GET',headers={'Host':'evil.example'})[1]['code'],'mcp_host_not_allowed')
+        self.assertEqual(self.request('/oauth/authorize?'+urlencode(params),method='GET',headers={'Host':'127.0.0.1:'+str(self.server.server_address[1])})[1]['code'],'oauth_public_host_required')
 
     def test_disabled_and_requires_https_origin(self):
         with patch.dict(os.environ,{'BILI_MCP_ENABLED':'1','BILI_WEB_PUBLIC_ORIGIN':''}),self.assertRaises(LibraryError):

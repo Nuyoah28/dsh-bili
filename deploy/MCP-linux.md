@@ -183,7 +183,7 @@ PY
 
 - **404**：未更新代码、未启用MCP或重启失败。
 - **401**：匿名请求的预期响应；认证请求出现则检查独立MCP令牌/OAuth是否过期、是否误填web-token。
-- **403**：Host/Origin不允许。保留真实Host；不要通过删除安全检查来修复。
+- **403**：查看JSON中的`code`。`mcp_host_not_allowed` / `oauth_public_host_required`时，检查Nginx保留的Host及公网来源配置；`mcp_origin_not_allowed` / `oauth_consent_origin_required`时，检查是否从新的授权页提交。授权入口GET支持外部客户端导航，但MCP接口与授权提交仍严格检查来源。授权页的Referrer-Policy必须是`same-origin`，不能被Nginx强制改成`no-referrer`；后者会让浏览器的原生表单POST发送`Origin: null`。不要允许任意来源或绕过Cookie/nonce。
 - **405**：GET `/mcp` 无SSE流，认证后属正常现象；客户端应使用Streamable HTTP POST。
 - **502**：检查用户服务日志 `journalctl --user -u bili-library -n 30 --no-pager`，域名环境变量不得含Markdown链接格式。
 - **invalid_redirect_uri**：核对客户端精确回调和登记方式，默认DCR；不要把任意外部域名加入允许名单。

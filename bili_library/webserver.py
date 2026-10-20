@@ -173,10 +173,10 @@ class Handler(BaseHTTPRequestHandler):
         super().setup();self.connection.settimeout(15)
     def log_message(self,*args): pass  # no request/query/cookie logging
 
-    def headers_common(self):
+    def headers_common(self,referrer_policy='no-referrer'):
         self.send_header('X-Content-Type-Options','nosniff')
         self.send_header('X-Frame-Options','DENY')
-        self.send_header('Referrer-Policy','no-referrer')
+        self.send_header('Referrer-Policy',referrer_policy)
         self.send_header('Cache-Control','no-store')
         self.send_header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; media-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 

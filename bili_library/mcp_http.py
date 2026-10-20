@@ -21,6 +21,11 @@ PATHS={'/mcp','/.well-known/oauth-protected-resource','/.well-known/oauth-protec
        '/oauth/consent','/oauth/token','/oauth/revoke'}
 
 
+class SourceError(PermissionError):
+    """Only fixed reason codes are returned; no headers, tokens or OAuth query data."""
+    pass
+
+
 def single(data):
     if any(len(values)!=1 for values in data.values()): raise OAuthError('invalid_request')
     return {k:v[0] for k,v in data.items()}
@@ -62,7 +67,9 @@ def authorize_page(h,data):
 <label>MCP 令牌 <input name="owner" type="password" required autocomplete="off"></label>
 <button name="approve" value="yes">授权</button><button name="approve" value="no">拒绝</button></form>
 </main></body></html>'''.encode()
-    h.send_response(200);h.headers_common();h.send_header('Content-Type','text/html; charset=utf-8')
+    # no-referrer makes native HTML form POSTs serialize Origin as null in browsers.
+    # same-origin keeps the real form Origin, but discloses no referrer on external callbacks.
+    h.send_response(200);h.headers_common(referrer_policy='same-origin');h.send_header('Content-Type','text/html; charset=utf-8')
     h.send_header('Content-Length',str(len(page)))
     h.send_header('Set-Cookie',f'bili_oauth={binding}; Path=/oauth; HttpOnly; Secure; SameSite=Lax; Max-Age=600')
     h.end_headers();h.wfile.write(page)
@@ -120,14 +127,19 @@ def handle(h,path,write):
             empty(h,405);return True
         host=h.headers.get('Host')
         local={f'127.0.0.1:{h.server.server_address[1]}',f'localhost:{h.server.server_address[1]}'}
-        if host not in local|{h.server.public_host}: raise PermissionError()
+        if host not in local|{h.server.public_host}: raise SourceError('mcp_host_not_allowed')
         # OAuth browser navigation from a third party is expected; POST consent stays same-origin.
         origin=h.headers.get('Origin')
         allowed={auth.origin,'https://chatgpt.com','https://chat.openai.com'}
-        if origin and origin not in allowed: raise PermissionError()
+        # The authorization endpoint is a browser navigation from an external client,
+        # not an authenticated API call. Consent still requires exact same-origin POST.
+        authorization_navigation=(path=='/oauth/authorize' and h.command=='GET')
+        if not authorization_navigation and origin and origin not in allowed: raise SourceError('mcp_origin_not_allowed')
         if path=='/oauth/consent':
-            if not write or host!=h.server.public_host or origin!=auth.origin or h.headers.get('Sec-Fetch-Site')=='cross-site':
-                raise PermissionError()
+            if not write: raise SourceError('oauth_consent_requires_post')
+            if host!=h.server.public_host: raise SourceError('oauth_public_host_required')
+            if origin!=auth.origin: raise SourceError('oauth_consent_origin_required')
+            if h.headers.get('Sec-Fetch-Site')=='cross-site': raise SourceError('oauth_consent_cross_site')
             data=body(h);cookie=SimpleCookie();cookie.load(h.headers.get('Cookie',''))
             binding=cookie.get('bili_oauth')
             location=auth.consent(data.get('nonce',''),binding.value if binding else '',data.get('owner',''),data.get('approve')=='yes')
@@ -139,7 +151,7 @@ def handle(h,path,write):
             else: h.respond(auth.metadata(resource='oauth-protected-resource' in path))
         elif path=='/oauth/authorize':
             if write: empty(h,405)
-            elif host!=h.server.public_host: raise PermissionError()
+            elif host!=h.server.public_host: raise SourceError('oauth_public_host_required')
             else: authorize_page(h,single(parse_qs(urlsplit(h.path).query,keep_blank_values=True,max_num_fields=30)))
         elif path in ('/oauth/register','/oauth/token','/oauth/revoke'):
             if not write: empty(h,405)
@@ -160,7 +172,8 @@ def handle(h,path,write):
             result=rpc(h,body(h,json_=True))
             if result is None: empty(h,202)
             else: h.respond(result)
-    except PermissionError: h.respond({'error':'请求来源或校验不通过'},403)
+    except SourceError as exc: h.respond({'error':'请求来源或校验不通过','code':str(exc)},403)
+    except PermissionError: h.respond({'error':'请求来源或校验不通过','code':'request_permission_denied'},403)
     except OAuthError as exc: h.respond({'error':exc.code},400)
     except (BrokenPipeError,ConnectionResetError): pass
     except Exception: h.respond({'error':'invalid_request'},400)

@@ -125,7 +125,7 @@ def execute(args, library):
     if args.command == 'worker':
         return worker(library)
     if args.command == 'task':
-        return library.task(args.id) if args.id else library.rows('SELECT * FROM tasks ORDER BY created DESC')
+        return library.task(args.id) if args.id else library.rows('SELECT * FROM tasks ORDER BY COALESCE(attempted,created) DESC,created DESC')
     if args.command == 'list':
         return library.rows('SELECT * FROM videos ORDER BY rowid DESC')
     if args.command in ('cancel','retry'):

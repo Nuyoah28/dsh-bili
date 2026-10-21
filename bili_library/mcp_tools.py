@@ -102,7 +102,7 @@ def call(server,lib,name,args):
             except BusyError: task['note']='后台忙，视频已排队；当前任务结束后请调用bili_process_queue'
         return text_result(task)
     if name=='bili_tasks':
-        return text_result(lib.task(args['task_id']) if args.get('task_id') else page(lib.rows('SELECT * FROM tasks ORDER BY created DESC'),args))
+        return text_result(lib.task(args['task_id']) if args.get('task_id') else page(lib.rows('SELECT * FROM tasks ORDER BY COALESCE(attempted,created) DESC,created DESC'),args))
     if name=='bili_videos':
         items=lib.rows('SELECT * FROM videos WHERE instr(lower(title),lower(?))>0 ORDER BY rowid DESC',(args.get('query',''),))
         return text_result(page(items,args))

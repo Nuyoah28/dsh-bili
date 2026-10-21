@@ -41,14 +41,6 @@ def probe(path):
         raise LibraryError('下载文件不是可校验的视频') from None
 
 
-class SilentLogger:
-    # yt-dlp errors contain signed URLs and sometimes request headers; never persist them.
-    def debug(self, *args, **kwargs): pass
-    def info(self, *args, **kwargs): pass
-    def warning(self, *args, **kwargs): pass
-    def error(self, *args, **kwargs): pass
-
-
 def add_cookies(ydl, cookies):
     for name, value in cookies.items():
         ydl.cookiejar.set_cookie(http.cookiejar.Cookie(
@@ -57,12 +49,18 @@ def add_cookies(ydl, cookies):
 
 
 def download(library, meta, work, cookies):
+    from .diagnostics import DownloadLogger, record, MESSAGES
+    task_id = work.name if library.rows("SELECT id FROM tasks WHERE id=?", (work.name,)) else None
+    logger = DownloadLogger(library, task_id)
     try:
         import yt_dlp
     except ImportError:
         raise LibraryError('缺少 yt-dlp；请先运行 node tools/library.mjs setup') from None
     binary('ffmpeg')
     binary('ffprobe')
+    record(library, task_id, 'extract', cookie_present=bool(cookies.get('SESSDATA')),
+           max_bytes=library.config['max_download_bytes'], timeout_seconds=library.config['task_timeout_seconds'],
+           yt_dlp_version=getattr(getattr(yt_dlp, 'version', None), '__version__', ''))
     sizes = {}
     started = time.monotonic()
     def hook(progress):
@@ -82,7 +80,7 @@ def download(library, meta, work, cookies):
                     retries=2, fragment_retries=2, file_access_retries=1,
                     ratelimit=library.config['download_rate_bytes'],
                     max_filesize=library.config['max_download_bytes'],
-                    progress_hooks=[hook], logger=SilentLogger(), quiet=True, noprogress=True,
+                    progress_hooks=[hook], logger=logger, quiet=True, noprogress=True,
                     writesubtitles=False, writeautomaticsub=False, writethumbnail=False,
                     getcomments=False, cachedir=False, enable_file_urls=False,
                     hls_prefer_native=True, fixup='never',
@@ -119,17 +117,23 @@ def download(library, meta, work, cookies):
                         if f_url.startswith('http://'):
                             fragment['url'] = 'https://' + f_url[7:]
                         validate_url(fragment['url'])
+                record(library, task_id, 'formats', streams=len(streams), estimated_bytes=estimate)
+                record(library, task_id, 'transfer')
                 ydl.process_info(info)
         except LibraryError:
             raise
-        except Exception:
-            raise LibraryError('yt-dlp 下载失败；可能需要登录、格式不可用或网络策略拒绝，凭证和媒体地址未记录') from None
+        except Exception as error:
+            logger.capture(error, 'error')
+            code = getattr(guard, 'failure_code', None) or logger.code or 'unknown'
+            record(library, task_id, code, 'error')
+            raise LibraryError('yt-dlp 下载失败 ['+code+']：'+MESSAGES[code]) from None
     files = [p for p in work.glob('video.*') if p.suffix in ('.mp4', '.mkv', '.webm', '.flv')]
     if len(files) != 1:
         raise LibraryError('下载器没有产出唯一完整视频文件')
     path = files[0]
     if path.stat().st_size > library.config['max_download_bytes']:
         raise LibraryError('下载文件超过大小上限')
+    record(library, task_id, 'verify')
     checked = probe(path)
     if checked['height'] > 720 or checked['duration'] > library.config['max_duration_seconds']:
         raise LibraryError('实际视频分辨率或时长超过限制')

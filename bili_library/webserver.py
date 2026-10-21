@@ -299,10 +299,12 @@ class Handler(BaseHTTPRequestHandler):
                 jobs=lib.rows('SELECT * FROM web_jobs ORDER BY created DESC LIMIT 20')
                 for job in jobs: job['result']=json.loads(job['result']) if job['result'] else None
                 self.respond({'videos':lib.rows('SELECT * FROM videos ORDER BY rowid DESC'),
-                              'tasks':lib.rows('SELECT * FROM tasks ORDER BY created DESC LIMIT 200'),
+                              'tasks':lib.rows('SELECT * FROM tasks ORDER BY COALESCE(attempted,created) DESC,created DESC LIMIT 200'),
                               'folders':lib.rows('SELECT f.*, (SELECT count(*) FROM favorite_items i WHERE i.folder_id=f.id AND i.present=1) count FROM favorite_folders f ORDER BY title'),
                               'jobs':jobs,'usage_bytes':lib.usage(),'config':lib.config,
                               'trash':[{'id':r['id'],'deleted':r['deleted'],'video':json.loads(r['video'])} for r in lib.rows('SELECT * FROM trash ORDER BY deleted DESC')]});return
+            if path=='/api/task-logs':
+                self.respond(m.task_logs(lib,query.get('id',[''])[0]));return
             if path=='/api/favorites': self.respond({'items':m.favorite_items(lib,query.get('folder',[None])[0])});return
             if path=='/api/rules': self.respond({'rules':m.rules(lib)});return
             if path=='/api/config':
@@ -377,6 +379,8 @@ class Handler(BaseHTTPRequestHandler):
             from .__main__ import parser,execute
             if data.get('action') not in ('retry','cancel'): raise LibraryError('任务操作无效')
             return execute(parser().parse_args([data['action'],str(data.get('id',''))]),lib)
+        if path=='/api/history/delete':
+            return m.clear_history(lib,data.get('kind'),data.get('id'),data.get('confirmed'))
         if path=='/api/delete-video': return m.delete_video(lib,str(data.get('id','')))
         if path=='/api/trash':
             if data.get('action') not in ('restore','purge'): raise LibraryError('回收站操作无效')

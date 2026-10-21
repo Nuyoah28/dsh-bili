@@ -12,6 +12,7 @@ from .bilibili import load_cookies, metadata, subtitles
 from .common import Library, LibraryError, private_dir, read_json, write_json
 from .media import download, frames, initial_times, probe
 from .network import Network
+from .diagnostics import record, classify
 
 
 def cached(library, video):
@@ -37,6 +38,7 @@ def process(library, task_id):
     task = library.task(task_id)
     work = private_dir(library.home / 'tmp' / task_id)
     try:
+        record(library, task_id, 'metadata')
         library.update_task(task_id, stage='metadata')
         cookies = load_cookies(library)
         network = Network(cookies)
@@ -54,10 +56,12 @@ def process(library, task_id):
         library.update_task(task_id, video_id=meta['id'])
         video = library.video(meta['id'])
         if cached(library, video):
+            record(library, task_id, 'cached')
             library.update_task(task_id, state='completed', stage='cached', error=None)
             return
         library.check_space(32*1024**2)
         directory = private_dir(library.home / 'videos' / meta['id'])
+        record(library, task_id, 'download')
         library.update_task(task_id, stage='download')
         media = directory / (video.get('media') or 'missing')
         usable = False
@@ -75,6 +79,7 @@ def process(library, task_id):
             library.db.execute('UPDATE videos SET media=?,height=?,bytes=? WHERE id=?',
                                (media.name, checked['height'], media.stat().st_size, meta['id']))
         write_json(directory / 'metadata.json', library.video(meta['id']))
+        record(library, task_id, 'subtitles')
         library.update_task(task_id, stage='subtitles')
         subs = read_json(directory / 'subtitles.json')
         if not subs or subs.get('status') != 'available':
@@ -82,15 +87,19 @@ def process(library, task_id):
             write_json(directory / 'subtitles.json', subs)
         with library.db:
             library.db.execute('UPDATE videos SET subtitle_status=? WHERE id=?', (subs['status'],meta['id']))
+        record(library, task_id, 'frames')
         library.update_task(task_id, stage='frames')
         frames(library, directory, media, initial_times(checked['duration'],library.config['initial_frames']), checked['duration'])
         write_json(directory / 'metadata.json', library.video(meta['id']))
         library.check_space()
+        record(library, task_id, 'completed')
         library.update_task(task_id, state='completed', stage='completed', error=None)
     except LibraryError as exc:
+        record(library, task_id, classify(exc), 'error')
         library.update_task(task_id, state='failed', error=str(exc))
     except Exception:
         # Avoid leaking downloader/network exceptions and credential-bearing URLs.
+        record(library, task_id, 'unknown', 'error')
         library.update_task(task_id, state='failed', error='处理失败；请检查依赖、配置及本地媒体文件')
     finally:
         shutil.rmtree(work, ignore_errors=True)
@@ -115,8 +124,9 @@ def worker(library, stop_event=None):
         # The lock proves there is no live worker. Keep interrupted jobs visible, never auto-restart them.
         interrupted = library.rows("SELECT id FROM tasks WHERE state='running'")
         with library.db:
-            library.db.execute("UPDATE tasks SET state='failed',error='上次处理被中断，请显式 retry',updated=? WHERE state='running'", (time.time(),))
+            library.db.execute("UPDATE tasks SET state='failed',error='上次处理被中断，请显式 retry',updated=?,finished=? WHERE state='running'", (time.time(),time.time()))
         for previous in interrupted:
+            record(library, previous['id'], 'interrupted', 'error')
             shutil.rmtree(library.home / 'tmp' / previous['id'], ignore_errors=True)
         while True:
             if stop_event is not None and stop_event.is_set(): break
@@ -125,6 +135,7 @@ def worker(library, stop_event=None):
                 break
             task_id = pending[0]['id']
             library.update_task(task_id, state='running', stage='starting', error=None)
+            record(library, task_id, 'starting')
             child = subprocess.Popen([sys.executable, '-m', 'bili_library', '--home', str(library.home), '_process', task_id],
                                      start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                      cwd=str(Path(__file__).resolve().parent.parent), pass_fds=(lock_file.fileno(),),
@@ -155,6 +166,7 @@ def worker(library, stop_event=None):
                 stop_process(child)
             current = library.task(task_id)
             if error or current['state'] == 'running':
+                record(library, task_id, 'cancelled' if cancelled else classify(error or ''), 'error')
                 library.update_task(task_id, state='cancelled' if cancelled else 'failed',
                                     error=error or '任务子进程异常退出')
             shutil.rmtree(library.home / 'tmp' / task_id, ignore_errors=True)

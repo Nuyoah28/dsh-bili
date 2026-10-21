@@ -25,6 +25,16 @@ sudo systemctl stop xray
 
 ## 2. 项目允许的 HTTPS 来源
 
+此部署使用用户级systemd服务。若要求退出SSH及开机后继续运行，在原来运行资料库的Linux用户下执行一次：
+
+```bash
+sudo loginctl enable-linger "$(id -un)"
+systemctl --user enable --now bili-library
+loginctl show-user "$(id -un)" -p Linger
+```
+
+应显示`Linger=yes`。配置完成后退出所有SSH连接，等待15秒，再从Mac直接访问HTTPS域名，确认仍可用；不需要SSH隧道。若仍502，检查用户服务日志及Nginx错误日志，不要因重新登录后服务自动恢复就认定问题已消失。
+
 在原本运行资料库的同一 Linux 用户下执行（用户级服务不属于其他用户）：
 
 ```bash

@@ -224,3 +224,42 @@ def classify(lib,keys,apply=False):
         with lib.db:
             for p in proposals: lib.db.execute("UPDATE favorite_items SET category=? WHERE key=? AND category=''",(p['category'],p['key']))
     return {'proposals':proposals,'applied':apply,'count':len(proposals)}
+
+
+def task_logs(lib, task_id):
+    lib.task(task_id)
+    logs=lib.rows('SELECT * FROM task_logs WHERE task_id=? ORDER BY id LIMIT 200',(task_id,))
+    for row in logs:
+        row['details']=json.loads(row['details'])
+    return {'task':lib.task(task_id),'logs':logs}
+
+
+def clear_history(lib, kind, record_id=None, confirmed=False):
+    """Delete terminal records only, atomically with respect to retry/worker claims."""
+    if confirmed is not True:
+        raise LibraryError('请确认删除历史记录或日志')
+    if kind not in ('tasks','logs','jobs'):
+        raise LibraryError('历史记录类型无效')
+    if record_id is not None and (not isinstance(record_id,str) or not re.fullmatch(r'[a-f0-9]{32}',record_id)):
+        raise LibraryError('历史记录ID无效')
+    table='web_jobs' if kind=='jobs' else 'tasks'
+    # A worker can still inspect a just-completed task before its child exits.
+    # Hold the shared lock as well as the DB transaction to exclude that window.
+    with lib.lock(), lib.db:
+        lib.db.execute('BEGIN IMMEDIATE')
+        if record_id:
+            rows=lib.rows('SELECT * FROM '+table+' WHERE id=?',(record_id,))
+            if not rows: raise LibraryError('历史记录不存在')
+            if rows[0]['state'] not in ('completed','failed','cancelled'):
+                raise LibraryError('排队或运行中的记录不能删除，请先取消并等待结束')
+        else:
+            rows=lib.rows("SELECT id FROM "+table+" WHERE state IN ('completed','failed','cancelled')")
+        count=0
+        for row in rows:
+            if kind in ('tasks','logs'):
+                result=lib.db.execute('DELETE FROM task_logs WHERE task_id=?',(row['id'],))
+                count+=result.rowcount
+            if kind!='logs':
+                lib.db.execute('DELETE FROM '+table+' WHERE id=?',(row['id'],))
+        # Reuse freed SQLite pages without a blocking VACUUM or modifying any media.
+    return {'ok':True,'count':count if kind=='logs' else len(rows)}

@@ -199,9 +199,31 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(code,200);self.assertIn('学习'.encode(),csv)
         self.assertIn('attachment',headers['Content-Disposition'])
         lib=Library(self.home);self.assertEqual(m.favorite_items(lib)[0]['tags'],['线代']);lib.close()
+    def test_history_logs_auth_confirmation_and_delete(self):
+        self.assertEqual(self.request('/api/task-logs?id='+'a'*32)[0],401)
+        self.assertEqual(self.request('/api/history/delete',{'kind':'tasks','confirmed':True})[0],401)
+        self.login()
+        task=self.request('/api/tasks',{'url':ITEM['url']})[1]
+        lib=Library(self.home)
+        from bili_library.diagnostics import record
+        lib.update_task(task['id'],state='running')
+        lib.update_task(task['id'],state='failed',error='test')
+        record(lib,task['id'],'http_403','error');lib.close()
+        code,data,_=self.request('/api/task-logs?id='+task['id'])
+        self.assertEqual(code,200);self.assertEqual(data['logs'][0]['code'],'http_403')
+        self.assertIsNotNone(self.request('/api/state')[1]['tasks'][0]['started'])
+        self.assertEqual(self.request('/api/history/delete',{'kind':'tasks','id':task['id']})[0],400)
+        csrf=self.csrf;self.csrf='wrong'
+        self.assertEqual(self.request('/api/history/delete',{'kind':'tasks','confirmed':True})[0],403)
+        self.csrf=csrf
+        self.assertEqual(self.request('/api/history/delete',{'kind':'logs','id':task['id'],'confirmed':True})[0],200)
+        self.assertEqual(self.request('/api/task-logs?id='+task['id'])[1]['logs'],[])
+        self.assertEqual(self.request('/api/history/delete',{'kind':'tasks','id':task['id'],'confirmed':True})[0],200)
+        self.assertEqual(self.request('/api/state')[1]['tasks'],[])
+
     def test_static_security_headers_path_traversal_and_range(self):
         code,body,headers=self.request('/',raw=True)
-        self.assertEqual(code,200);self.assertIn(b'BILIBILI LIBRARY',body)
+        self.assertEqual(code,200);self.assertIn('b站视频插件'.encode(),body)
         self.assertIn('Content-Security-Policy',headers)
         self.login()
         self.assertEqual(self.request('/../../secrets/web-token')[0],404)

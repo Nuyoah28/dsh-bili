@@ -103,6 +103,21 @@ class Library:
             stage TEXT NOT NULL, video_id TEXT REFERENCES videos(id), error TEXT,
             created REAL NOT NULL, updated REAL NOT NULL, cancel_requested INTEGER NOT NULL DEFAULT 0);
         ''')
+        # Upgrade existing libraries without discarding their task history.
+        with self.db:
+            self.db.execute('BEGIN IMMEDIATE')
+            columns = {r[1] for r in self.db.execute('PRAGMA table_info(tasks)')}
+            for name in ('attempted', 'started', 'finished'):
+                if name not in columns:
+                    self.db.execute('ALTER TABLE tasks ADD COLUMN '+name+' REAL')
+        self.db.executescript("""
+          CREATE TABLE IF NOT EXISTS task_logs (
+            id INTEGER PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            created REAL NOT NULL, level TEXT NOT NULL, code TEXT NOT NULL,
+            message TEXT NOT NULL, details TEXT NOT NULL);
+          CREATE INDEX IF NOT EXISTS task_logs_task ON task_logs(task_id,id);
+          CREATE INDEX IF NOT EXISTS task_attempt_time ON tasks(attempted DESC,created DESC);
+        """)
         os.chmod(self.home / 'index.sqlite3', 0o600)
         from .management import init_tables
         init_tables(self)
@@ -126,7 +141,14 @@ class Library:
         return rows[0]
 
     def update_task(self, task_id, **changes):
-        changes['updated'] = time.time()
+        now = time.time()
+        changes['updated'] = now
+        if changes.get('state') == 'running':
+            changes.update(attempted=now, started=now, finished=None)
+        elif changes.get('state') == 'queued':
+            changes.update(attempted=now, started=None, finished=None)
+        elif changes.get('state') in ('completed', 'failed', 'cancelled'):
+            changes['finished'] = now
         with self.db:
             self.db.execute('UPDATE tasks SET ' + ','.join(k+'=?' for k in changes) + ' WHERE id=?',
                             (*changes.values(), task_id))
@@ -141,8 +163,9 @@ class Library:
                 return {**found[0], 'reused_task': True}
             task_id = uuid.uuid4().hex
             now = time.time()
-            self.db.execute('INSERT INTO tasks VALUES (?,?,?,?,?,?,?,?,?)',
-                            (task_id, source, 'queued', 'queued', None, None, now, now, 0))
+            self.db.execute('INSERT INTO tasks(id,source,state,stage,video_id,error,created,updated,cancel_requested,attempted) '
+                            'VALUES (?,?,?,?,?,?,?,?,?,?)',
+                            (task_id, source, 'queued', 'queued', None, None, now, now, 0, now))
         return self.task(task_id)
 
     def usage(self):

@@ -184,6 +184,8 @@ class Network:
 class GuardProxy:
     """Internal transport helper only; authenticated, loopback, lifetime of one task."""
     def __enter__(self):
+        self.failure_code = None
+        owner = self
         self.token = secrets.token_urlsafe(32)
         expected = 'Basic ' + base64.b64encode(('bili:'+self.token).encode()).decode()
         slots = threading.BoundedSemaphore(4)
@@ -192,6 +194,7 @@ class GuardProxy:
             def handle(self):
                 if not slots.acquire(blocking=False):
                     return
+                connected = False
                 try:
                     self.connection.settimeout(15)
                     first = self.rfile.readline(4097).decode('ascii', 'replace').strip().split()
@@ -211,6 +214,7 @@ class GuardProxy:
                         self.wfile.write(b'HTTP/1.1 407 Proxy Authentication Required\r\n\r\n')
                         return
                     upstream = connect_public(host)
+                    connected = True
                     with upstream:
                         self.wfile.write(b'HTTP/1.1 200 Connection established\r\n\r\n')
                         self.wfile.flush()
@@ -224,8 +228,12 @@ class GuardProxy:
                                 if not data:
                                     return
                                 (upstream if src is self.connection else self.connection).sendall(data)
-                except Exception:
-                    pass  # Never log remote hosts/URLs/credentials, including socketserver tracebacks.
+                except Exception as error:
+                    from .diagnostics import classify
+                    code = classify(error)
+                    if not connected and (code != 'unknown' or owner.failure_code is None):
+                        owner.failure_code = code
+                    # No raw remote hosts/URLs/credentials or socketserver tracebacks.
                 finally:
                     slots.release()
 

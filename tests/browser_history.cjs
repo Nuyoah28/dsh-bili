@@ -13,6 +13,19 @@ async function main(){
   await page.goto(info.url);assert.equal(await page.title(),'b站视频插件');
   await page.locator('#token').fill('ephemeral-history-browser-token-123456');await page.locator('#login-form button').click();
   await page.locator('[data-tab="tasks"]').click();
+  await page.locator('[data-action="cache-open"]').click();
+  await page.locator('#modal').getByText('tmp/'+info.first,{exact:false}).waitFor();
+  await page.locator('#cache-confirm').click();await page.locator('#modal').waitFor({state:'hidden'});
+  await page.locator('[data-action="cache-open"]').click();
+  await page.locator('#modal').getByText('暂无可清理内容。',{exact:false}).waitFor();
+  await page.locator('#cache-include-failed').check();
+  await page.locator('#modal').getByText('未完成归档测试',{exact:false}).waitFor();
+  await page.screenshot({path:'/tmp/bili-cache-preview.png',fullPage:true});
+  await page.locator('#cache-confirm').click();await page.locator('#modal').waitFor({state:'hidden'});
+  await page.locator('[data-tab="trash"]').click();
+  await page.getByRole('button',{name:'恢复',exact:true}).click();
+  await page.locator('tbody tr').waitFor({state:'detached'});
+  await page.locator('[data-tab="tasks"]').click();
   await page.locator(`[data-action="task-logs"][data-id="${info.first}"]`).click();
   await page.locator('#modal').getByText('HTTP 403：',{exact:false}).waitFor();
   await page.locator('#modal [data-action="history-logs"]').click();await page.locator('#history-confirm').click();
@@ -31,7 +44,7 @@ async function main(){
   assert.equal(await page.locator(`[data-action="task-cancel"][data-id="${info.first}"]`).count(),1);
   await page.screenshot({path:'/tmp/bili-history-desktop.png',fullPage:true});
   await page.setViewportSize({width:390,height:844});await page.screenshot({path:'/tmp/bili-history-mobile.png',fullPage:true});
-  assert.deepEqual(errors,[]);process.stdout.write('History browser: branding, logs, deletion, retry sorting, active protection passed\n');
+  assert.deepEqual(errors,[]);process.stdout.write('History browser: cache preview/cleanup/trash restore, branding, logs, deletion, retry sorting, active protection passed\n');
  }finally{if(browser)await browser.close();fixture.kill('SIGTERM')}
 }
 main().catch(e=>{console.error(e);process.exitCode=1});

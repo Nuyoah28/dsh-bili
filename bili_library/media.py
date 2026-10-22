@@ -127,6 +127,8 @@ def download(library, meta, work, cookies):
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 add_cookies(ydl, cookies)
+                from .bili_formats import install_safe_bili_extractor
+                install_safe_bili_extractor(ydl, library, task_id)
                 info = ydl.extract_info(meta['source'], download=False)
                 expected = {meta['bvid'] + f'_p{meta["page"]}'}
                 if meta['page'] == 1:
@@ -159,12 +161,15 @@ def download(library, meta, work, cookies):
                 record(library, task_id, 'formats', streams=len(streams), estimated_bytes=estimate)
                 stage('transfer')
                 ydl.process_info(info)
-        except LibraryError:
+        except LibraryError as error:
+            from .diagnostics import classify
+            record(library, task_id, classify(error), 'error', **getattr(error,'diagnostic_details',{}))
             raise
         except Exception as error:
             logger.capture(error, 'error')
             code = getattr(guard, 'failure_code', None) or logger.code or 'unknown'
-            record(library, task_id, code, 'error')
+            details=getattr(guard,'failure_details',{})
+            record(library, task_id, code, 'error', **(details if isinstance(details,dict) else {}))
             raise LibraryError('yt-dlp 下载失败 ['+code+']：'+MESSAGES[code]) from None
     files = [p for p in work.glob('video.*') if p.suffix in ('.mp4', '.mkv', '.webm', '.flv')]
     if len(files) != 1:

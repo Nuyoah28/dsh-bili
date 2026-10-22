@@ -221,6 +221,22 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(self.request('/api/history/delete',{'kind':'tasks','id':task['id'],'confirmed':True})[0],200)
         self.assertEqual(self.request('/api/state')[1]['tasks'],[])
 
+    def test_cache_cleanup_auth_csrf_and_confirmation(self):
+        self.assertEqual(self.request('/api/cache')[0],401)
+        self.assertEqual(self.request('/api/cache/clean',{'confirmed':True})[0],401)
+        self.login()
+        d=self.home/'tmp'/('a'*32);d.mkdir();(d/'video.part').write_bytes(b'cache')
+        code,report,_=self.request('/api/cache')
+        self.assertEqual(code,200);self.assertEqual(report['reclaimable_bytes'],5)
+        self.assertTrue(d.exists())
+        self.assertEqual(self.request('/api/cache/clean',{'snapshot':report['snapshot']})[0],400)
+        csrf=self.csrf;self.csrf='bad'
+        self.assertEqual(self.request('/api/cache/clean',{'snapshot':report['snapshot'],'confirmed':True})[0],403)
+        self.csrf=csrf
+        code,result,_=self.request('/api/cache/clean',{'snapshot':report['snapshot'],'confirmed':True})
+        self.assertEqual(code,200);self.assertEqual(result['deleted_temporary'],1)
+        self.assertFalse(d.exists())
+
     def test_static_security_headers_path_traversal_and_range(self):
         code,body,headers=self.request('/',raw=True)
         self.assertEqual(code,200);self.assertIn('b站视频插件'.encode(),body)

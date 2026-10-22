@@ -23,6 +23,13 @@ with tempfile.TemporaryDirectory(prefix='bili-history-browser-') as temp:
     second=lib.submit('https://www.bilibili.com/video/BV1234567890?p=2')
     lib.update_task(second['id'],state='completed')
     record(lib,second['id'],'completed')
+    staging=home/'tmp'/first['id'];staging.mkdir();(staging/'video.part').write_bytes(b'cache-fixture')
+    vid='BV1234567890_22'
+    with lib.db:
+        lib.db.execute('INSERT INTO videos(id,bvid,cid,page,title,part_title,source,duration) VALUES(?,?,?,?,?,?,?,?)',
+                       (vid,'BV1234567890',22,1,'未完成归档测试','P1',first['source'],60))
+        lib.db.execute('UPDATE tasks SET video_id=? WHERE id=?',(vid,first['id']))
+    partial=home/'videos'/vid;partial.mkdir();(partial/'video.mkv').write_bytes(b'partial-fixture')
     lib.close()
     server=AdminServer(home,port=0,token='ephemeral-history-browser-token-123456')
     print(json.dumps({'url':'http://127.0.0.1:'+str(server.server_address[1]),'first':first['id'],'second':second['id']}),flush=True)

@@ -31,6 +31,15 @@ MESSAGES = {
     'login': '视频需要登录、会员或其他账号权限；登录成功不代表具有该视频权限',
     'format': '没有符合要求的可用媒体格式（最高720p）；检查视频权限或yt-dlp版本',
     'non_public': '网络安全策略拒绝非公网地址；检查Fake-IP/DNS，保留安全检查',
+    'address_fallback': '主媒体地址不符合规则，已选用同一媒体流的合规备用地址',
+    'format_skipped': '已跳过无合规地址的格式，继续从其余格式选择最高720p',
+    'url_missing': '媒体地址缺失，未发起下载',
+    'url_invalid': '媒体地址格式或端口格式无效，已拒绝访问',
+    'url_credentials': '媒体地址含不允许的用户凭证字段，已拒绝访问',
+    'url_domain': '媒体域名不在允许的B站域名范围，已拒绝访问',
+    'url_scheme': '媒体协议不允许；仅支持HTTPS',
+    'url_port': '媒体端口不允许；仅支持HTTPS默认443端口',
+    'no_safe_format': '没有符合现有网络规则的媒体格式或备用地址；不会放开域名、端口或内网限制',
     'domain': '媒体地址不在允许的B站HTTPS域名范围，已拒绝访问',
     'dns': '域名解析失败；检查资料库DNS配置与网络',
     'tls': 'TLS证书验证或握手失败；检查系统时间、证书与网络',
@@ -47,6 +56,9 @@ MESSAGES = {
 
 def classify(error):
     """Inspect in memory only; return a fixed code, never any input text."""
+    explicit = getattr(error,'diagnostic_code',None)
+    if explicit in MESSAGES:
+        return explicit
     text = str(error).lower()[:32768]
     for code in (401, 403, 404, 412, 429):
         if re.search(r'\b(?:http(?:\s+error)?|status(?:\s+code)?)\s*[:=]?\s*'+str(code)+r'\b', text):
@@ -77,10 +89,16 @@ def record(lib, task_id, code, level='info', **details):
     code = code if code in MESSAGES else 'unknown'
     safe = {}
     for key in ('height', 'streams', 'estimated_bytes', 'max_bytes', 'timeout_seconds', 'cookie_present',
-                'rate_limit_bytes', 'downloaded_bytes', 'stream_total_bytes', 'speed_bytes', 'eta_seconds'):
+                'rate_limit_bytes', 'downloaded_bytes', 'stream_total_bytes', 'speed_bytes', 'eta_seconds',
+                'media_port', 'fallback_streams', 'rejected_formats'):
         value = details.get(key)
         if isinstance(value, (int, bool)) and abs(value) <= 2**63-1:
             safe[key] = value
+    host = details.get('media_host')
+    from .network import NETWORK_ROOTS
+    if isinstance(host,str) and re.fullmatch(r'[a-z0-9.-]{1,253}',host) and any(
+            host == root or host.endswith('.'+root) for root in NETWORK_ROOTS):
+        safe['media_host'] = host
     version = details.get('yt_dlp_version')
     if isinstance(version, str) and re.fullmatch(r'[0-9.]{1,32}', version):
         safe['yt_dlp_version'] = version

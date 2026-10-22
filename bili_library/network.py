@@ -28,18 +28,40 @@ NETWORK_ROOTS = ('bilibili.com', 'b23.tv', 'bilivideo.com', 'bilivideo.cn', 'hds
 UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/130.0 Safari/537.36'
 
 
+class URLPolicyError(LibraryError):
+    def __init__(self, code, host=None, port=None):
+        from .diagnostics import MESSAGES
+        self.diagnostic_code = code
+        self.diagnostic_details = {}
+        # Only known Bili hostnames and numeric ports; never URLs, queries or userinfo.
+        if isinstance(host,str) and re.fullmatch(r'[a-z0-9.-]{1,253}',host) and any(
+                host == root or host.endswith('.'+root) for root in NETWORK_ROOTS):
+            self.diagnostic_details['media_host'] = host
+        if isinstance(port,int) and 0 < port <= 65535:
+            self.diagnostic_details['media_port'] = port
+        super().__init__(MESSAGES[code])
+
+
 def validate_url(url, input_only=False):
+    if not isinstance(url,str) or not url:
+        raise URLPolicyError('url_missing')
     try:
         u = urlsplit(url)
         host = (u.hostname or '').lower()
         port = u.port
     except ValueError:
-        raise LibraryError('链接格式无效') from None
+        raise URLPolicyError('url_invalid') from None
+    if '\\' in url or any(ord(c) <= 32 or ord(c) == 127 for c in url):
+        raise URLPolicyError('url_invalid')
+    if u.username is not None or u.password is not None:
+        raise URLPolicyError('url_credentials')
     hosts_ok = host in INPUT_HOSTS if input_only else any(host == r or host.endswith('.'+r) for r in NETWORK_ROOTS)
-    if (u.scheme != 'https' or not hosts_ok or port not in (None, 443)
-            or u.username is not None or u.password is not None or '\\' in url
-            or any(ord(c) <= 32 or ord(c) == 127 for c in url)):
-        raise LibraryError('仅允许受支持的 B站 HTTPS 地址')
+    if not hosts_ok:
+        raise URLPolicyError('url_domain')
+    if u.scheme != 'https':
+        raise URLPolicyError('url_scheme',host,port)
+    if port not in (None,443):
+        raise URLPolicyError('url_port',host,port)
     return u
 
 
@@ -185,6 +207,7 @@ class GuardProxy:
     """Internal transport helper only; authenticated, loopback, lifetime of one task."""
     def __enter__(self):
         self.failure_code = None
+        self.failure_details = {}
         owner = self
         self.token = secrets.token_urlsafe(32)
         expected = 'Basic ' + base64.b64encode(('bili:'+self.token).encode()).decode()
@@ -233,6 +256,7 @@ class GuardProxy:
                     code = classify(error)
                     if not connected and (code != 'unknown' or owner.failure_code is None):
                         owner.failure_code = code
+                        owner.failure_details = getattr(error,'diagnostic_details',{})
                     # No raw remote hosts/URLs/credentials or socketserver tracebacks.
                 finally:
                     slots.release()

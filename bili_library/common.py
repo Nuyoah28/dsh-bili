@@ -172,10 +172,15 @@ class Library:
         return sum(p.stat().st_size for p in self.home.rglob('*') if p.is_file() and not p.is_symlink())
 
     def check_space(self, reserve=0):
-        if self.usage() + reserve > self.config['quota_bytes']:
-            raise LibraryError('资料库磁盘配额不足')
-        if shutil.disk_usage(self.home).free - reserve < self.config['min_free_bytes']:
-            raise LibraryError('磁盘剩余空间不足')
+        used=self.usage()
+        gib=lambda n:f'{n/1024**3:.2f} GiB'
+        if used + reserve > self.config['quota_bytes']:
+            raise LibraryError('资料库磁盘配额不足：已用 '+gib(used)+'，配额 '+gib(self.config['quota_bytes'])+
+                               '，本次临时预留 '+gib(reserve))
+        free=shutil.disk_usage(self.home).free
+        if free - reserve < self.config['min_free_bytes']:
+            raise LibraryError('磁盘剩余空间不足：当前剩余 '+gib(free)+'，最低保留 '+gib(self.config['min_free_bytes'])+
+                               '，本次临时预留 '+gib(reserve)+'；请清理缓存/回收站或调整资源设置')
 
     @contextlib.contextmanager
     def lock(self):

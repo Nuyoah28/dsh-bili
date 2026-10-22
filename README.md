@@ -28,7 +28,7 @@ export BILI_FFMPEG=/你的工具目录/ffmpeg
 export BILI_FFPROBE=/你的工具目录/ffprobe
 ```
 
-`setup` 只安装 Python 环境和 yt-dlp；FFmpeg/ffprobe 二进制由你放入工具目录，`doctor` 会检查能否执行。下载媒体时不重新编码，FFmpeg 使用一个线程，下载默认限速 2 MiB/s。不会改 VPN、系统代理或其他服务。
+`setup` 只安装 Python 环境和 yt-dlp；FFmpeg/ffprobe 二进制由你放入工具目录，`doctor` 会检查能否执行。下载媒体时不重新编码，FFmpeg 使用一个线程，下载默认限速 2 MiB/s。后台“下载限速”的单位为字节/秒：8 MiB/s填写 `8388608`；8 Mbps线路理论上限约为1 MB/s，二者不同。下载期间每批数据检查累计大小、保守配额估算和剩余空间，全目录配额复查最多每2秒一次，避免反复遍历Python环境。日志每约15秒及每条媒体流完成时记录累计传输量、当前流速度和预计剩余时间，另行区分格式提取、传输、合并及校验阶段；速度未知时不编造数值。不会改 VPN、系统代理或其他服务。
 
 所有命令也可以由你自己的 Python 3.10+ 环境直接执行：`python -m bili_library ...`。Node 启动器支持 `BILI_LIBRARY_PYTHON` 指定解释器。`npm link` 后可使用短命令 `bili-library`，也可以始终使用 `node tools/library.mjs`。
 

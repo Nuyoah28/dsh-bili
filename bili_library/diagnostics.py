@@ -12,7 +12,9 @@ MESSAGES = {
     'download': '下载所选视频，最高720p，串行处理',
     'extract': 'yt-dlp正在提取媒体格式',
     'formats': '媒体格式检查通过，准备下载',
-    'transfer': '音视频传输与本地合并',
+    'transfer': '开始传输音视频',
+    'progress': '下载进度（累计传输量；总量、速度和预计时间为当前媒体流）',
+    'merge': '音视频下载结束，FFmpeg正在本地合并',
     'verify': '校验下载文件的分辨率、时长与完整性',
     'subtitles': '读取真实字幕',
     'frames': '提取初始画面',
@@ -74,7 +76,8 @@ def record(lib, task_id, code, level='info', **details):
         return
     code = code if code in MESSAGES else 'unknown'
     safe = {}
-    for key in ('height', 'streams', 'estimated_bytes', 'max_bytes', 'timeout_seconds', 'cookie_present'):
+    for key in ('height', 'streams', 'estimated_bytes', 'max_bytes', 'timeout_seconds', 'cookie_present',
+                'rate_limit_bytes', 'downloaded_bytes', 'stream_total_bytes', 'speed_bytes', 'eta_seconds'):
         value = details.get(key)
         if isinstance(value, (int, bool)) and abs(value) <= 2**63-1:
             safe[key] = value

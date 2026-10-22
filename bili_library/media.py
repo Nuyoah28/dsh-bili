@@ -48,6 +48,43 @@ def add_cookies(ydl, cookies):
             True, None, True, None, None, {}, False))
 
 
+class DownloadMonitor:
+    """Per-chunk byte limits without walking the library on every network block."""
+    def __init__(self, library, task_id=None):
+        self.library, self.task_id = library, task_id
+        self.started = time.monotonic()
+        self.sizes = {}
+        self.baseline = library.usage()
+        self.last_space = self.started
+        self.last_log = self.started - 15
+
+    def hook(self, progress):
+        from .diagnostics import record
+        now = time.monotonic()
+        if now - self.started > self.library.config['task_timeout_seconds']:
+            raise LibraryError('下载任务超时')
+        self.sizes[progress.get('filename', '')] = int(progress.get('downloaded_bytes') or 0)
+        transferred = sum(self.sizes.values())
+        if transferred > self.library.config['max_download_bytes']:
+            raise LibraryError('下载音视频合计超过大小上限')
+        # A conservative baseline includes any pre-existing temporary data.
+        if self.baseline + transferred > self.library.config['quota_bytes']:
+            raise LibraryError('资料库磁盘配额不足')
+        if shutil.disk_usage(self.library.home).free < self.library.config['min_free_bytes']:
+            raise LibraryError('磁盘剩余空间不足')
+        if now - self.last_space >= 2:
+            self.library.check_space()
+            self.last_space = now
+        if now - self.last_log >= 15 or progress.get('status') == 'finished':
+            details = {'downloaded_bytes': transferred}
+            for key, source in [('stream_total_bytes','total_bytes'), ('speed_bytes','speed'), ('eta_seconds','eta')]:
+                value = progress.get(source)
+                if isinstance(value,(int,float)) and math.isfinite(value) and 0 <= value < 2**63:
+                    details[key] = int(value)
+            record(self.library,self.task_id,'progress',**details)
+            self.last_log = now
+
+
 def download(library, meta, work, cookies):
     from .diagnostics import DownloadLogger, record, MESSAGES
     task_id = work.name if library.rows("SELECT id FROM tasks WHERE id=?", (work.name,)) else None
@@ -60,16 +97,18 @@ def download(library, meta, work, cookies):
     binary('ffprobe')
     record(library, task_id, 'extract', cookie_present=bool(cookies.get('SESSDATA')),
            max_bytes=library.config['max_download_bytes'], timeout_seconds=library.config['task_timeout_seconds'],
+           rate_limit_bytes=library.config['download_rate_bytes'],
            yt_dlp_version=getattr(getattr(yt_dlp, 'version', None), '__version__', ''))
-    sizes = {}
-    started = time.monotonic()
-    def hook(progress):
-        if time.monotonic() - started > library.config['task_timeout_seconds']:
-            raise LibraryError('下载任务超时')
-        sizes[progress.get('filename', '')] = int(progress.get('downloaded_bytes') or 0)
-        if sum(sizes.values()) > library.config['max_download_bytes']:
-            raise LibraryError('下载音视频合计超过大小上限')
-        library.check_space()
+    monitor = DownloadMonitor(library, task_id)
+    def stage(code):
+        record(library, task_id, code)
+        if task_id:
+            library.update_task(task_id, stage=code)
+    def postprocessor(progress):
+        if progress.get('status') == 'started' and progress.get('postprocessor') == 'Merger':
+            stage('merge')
+    if task_id:
+        library.update_task(task_id, stage='extract')
     with GuardProxy() as guard:
         opts = dict(proxy=guard.url, geo_verification_proxy=guard.url, noplaylist=True,
                     format='bestvideo[height<=720]+bestaudio/best[height<=720]',
@@ -80,7 +119,7 @@ def download(library, meta, work, cookies):
                     retries=2, fragment_retries=2, file_access_retries=1,
                     ratelimit=library.config['download_rate_bytes'],
                     max_filesize=library.config['max_download_bytes'],
-                    progress_hooks=[hook], logger=logger, quiet=True, noprogress=True,
+                    progress_hooks=[monitor.hook], postprocessor_hooks=[postprocessor], logger=logger, quiet=True, noprogress=True,
                     writesubtitles=False, writeautomaticsub=False, writethumbnail=False,
                     getcomments=False, cachedir=False, enable_file_urls=False,
                     hls_prefer_native=True, fixup='never',
@@ -118,7 +157,7 @@ def download(library, meta, work, cookies):
                             fragment['url'] = 'https://' + f_url[7:]
                         validate_url(fragment['url'])
                 record(library, task_id, 'formats', streams=len(streams), estimated_bytes=estimate)
-                record(library, task_id, 'transfer')
+                stage('transfer')
                 ydl.process_info(info)
         except LibraryError:
             raise
@@ -133,7 +172,7 @@ def download(library, meta, work, cookies):
     path = files[0]
     if path.stat().st_size > library.config['max_download_bytes']:
         raise LibraryError('下载文件超过大小上限')
-    record(library, task_id, 'verify')
+    stage('verify')
     checked = probe(path)
     if checked['height'] > 720 or checked['duration'] > library.config['max_duration_seconds']:
         raise LibraryError('实际视频分辨率或时长超过限制')

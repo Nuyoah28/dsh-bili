@@ -143,6 +143,7 @@ def worker(library, stop_event=None):
             started = time.monotonic()
             error = None
             cancelled = False
+            last_space = float('-inf')
             try:
                 while child.poll() is None:
                     if stop_event is not None and stop_event.is_set():
@@ -155,7 +156,9 @@ def worker(library, stop_event=None):
                         error = '任务超时，已终止下载及媒体处理子进程'
                         break
                     try:
-                        library.check_space()
+                        if time.monotonic() - last_space >= 2:
+                            library.check_space()
+                            last_space = time.monotonic()
                     except LibraryError as exc:
                         error = str(exc)
                         break
